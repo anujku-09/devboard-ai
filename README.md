@@ -20,8 +20,7 @@
   - **30-Min TTL Cache & Heuristic Fallback**: Caches AI responses in `sessionStorage` with manual refresh overrides and heuristic fallbacks during Free Tier API rate limits (15 req/min).
 
 - 📊 **Dynamic Task-Calculated Progress**:
-  - Automatically calculates project completion percentages from task completion states:
-    $$\text{Progress } (\%) = \left( \frac{\text{Completed Tasks}}{\text{Total Tasks}} \right) \times 100$$
+    > **Progress Formula**: `Progress (%) = (Completed Tasks / Total Tasks) × 100`
   - Displays real-time task ratios (e.g. `33% (3/9 tasks)`) across project cards, dashboards, and project detail headers.
 
 - 👥 **Team Collaborators & Access Control**:
