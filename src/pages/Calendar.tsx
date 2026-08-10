@@ -92,29 +92,29 @@ function Calendar() {
     <div className="space-y-4 sm:space-y-6 max-w-full overflow-hidden">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-ember/10 text-ember">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 rounded-xl bg-ember/10 text-ember shrink-0">
             <CalendarIcon size={20} />
           </div>
-          <div>
-            <h1 className="font-display text-lg sm:text-2xl font-bold text-slate-900 dark:text-white">
+          <div className="min-w-0">
+            <h1 className="font-display text-base sm:text-2xl font-bold text-slate-900 dark:text-white truncate">
               Calendar & Timeline
             </h1>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 truncate">
               Visualize task deadlines, project milestones, and upcoming deliverables.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between sm:justify-end gap-2">
           {/* Project Filter */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-surface-dark-raised">
-            <Filter size={14} className="text-ember shrink-0" />
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-surface-dark-raised flex-1 sm:flex-none min-w-0">
+            <Filter size={13} className="text-ember shrink-0" />
             <select
               aria-label="Filter calendar by project"
               value={selectedProjectId}
               onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="bg-transparent text-slate-800 dark:text-slate-200 text-xs font-semibold focus:outline-none cursor-pointer max-w-[160px] truncate"
+              className="bg-transparent text-slate-800 dark:text-slate-200 text-xs font-semibold focus:outline-none cursor-pointer w-full sm:max-w-[160px] truncate"
             >
               <option value="all" className="bg-white dark:bg-surface-dark text-slate-800 dark:text-slate-200">
                 All Projects ({projects.length})
@@ -134,7 +134,7 @@ function Calendar() {
               setInitialDueDate(null);
               setModalOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-ember px-3.5 py-1.5 text-xs sm:text-sm font-medium text-ink hover:bg-ember-dark transition-colors shrink-0"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-ember px-3.5 py-1.5 text-xs sm:text-sm font-medium text-ink hover:bg-ember-dark transition-colors shrink-0 shadow-xs"
           >
             <Plus size={14} />
             <span>Add Task</span>
