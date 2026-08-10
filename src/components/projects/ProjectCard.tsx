@@ -5,6 +5,7 @@ import type { Project } from "../../types/project";
 import ProgressBar from "../dashboard/ProgressBar";
 import CollaboratorAvatarStack from "./CollaboratorAvatarStack";
 import { useTasks } from "../../hooks/useTasks";
+import { useAuth } from "../../hooks/useAuth";
 import { calculateProjectProgress } from "../../utils/projectProgress";
 
 interface ProjectCardProps {
@@ -25,10 +26,13 @@ function ProjectCard({
     onDelete,
 }: ProjectCardProps) {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const { tasks } = useTasks();
     const [confirmingDelete, setConfirmingDelete] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
 
+    const projectOwnerId = project.user_id || (project as unknown as { userId?: string }).userId;
+    const isOwner = Boolean(user?.id && projectOwnerId && user.id === projectOwnerId);
     const calculated = calculateProjectProgress(tasks, project.id, project.progress);
 
     async function handleConfirmDelete(event: MouseEvent<HTMLButtonElement>) {
@@ -143,13 +147,15 @@ function ProjectCard({
                             >
                                 Edit
                             </button>
-                            <button
-                                type="button"
-                                onClick={handleDeleteClick}
-                                className="text-xs font-medium text-danger hover:text-danger/80 transition-colors"
-                            >
-                                Delete
-                            </button>
+                            {isOwner && (
+                                <button
+                                    type="button"
+                                    onClick={handleDeleteClick}
+                                    className="text-xs font-medium text-danger hover:text-danger/80 transition-colors"
+                                >
+                                    Delete
+                                </button>
+                            )}
                         </>
                     )}
                 </div>

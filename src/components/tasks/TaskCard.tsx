@@ -53,11 +53,21 @@ function CollapsibleTaskDescription({ description }: { description: string }) {
   );
 }
 
+function isOverdue(dueDate: string | null, status: Task["status"]): boolean {
+  if (!dueDate || status === "Completed") return false;
+  const due = new Date(dueDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return due < today;
+}
+
 function TaskCard({ task, projectName, onEdit, onDelete }: TaskCardProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const { link, linkToGithub, unlinkFromGithub } = useTaskGithubLink(task.id);
+
+  const overdue = isOverdue(task.dueDate, task.status);
 
   async function handleConfirmDelete() {
     setIsDeleting(true);
@@ -91,9 +101,20 @@ function TaskCard({ task, projectName, onEdit, onDelete }: TaskCardProps) {
             <CollapsibleTaskDescription description={task.description} />
           )}
           {task.dueDate && (
-            <p className="text-[11px] sm:text-xs text-slate-400 font-mono">
-              Due: {task.dueDate}
-            </p>
+            <div className="flex items-center gap-1.5 pt-0.5">
+              <p
+                className={`text-[11px] sm:text-xs font-mono ${
+                  overdue ? "text-danger font-semibold" : "text-slate-400"
+                }`}
+              >
+                Due: {task.dueDate}
+              </p>
+              {overdue && (
+                <span className="px-1.5 py-0.2 rounded-md bg-danger/10 text-danger border border-danger/20 text-[10px] font-semibold">
+                  Overdue
+                </span>
+              )}
+            </div>
           )}
         </div>
 

@@ -78,6 +78,14 @@ function CollapsibleTaskDescription({ description }: { description: string }) {
     );
 }
 
+function isOverdue(dueDate: string | null, status: Task["status"]): boolean {
+    if (!dueDate || status === "Completed") return false;
+    const due = new Date(dueDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return due < today;
+}
+
 function KanbanCard({
     task,
     projectName,
@@ -94,6 +102,7 @@ function KanbanCard({
     const [linkModalOpen, setLinkModalOpen] = useState(false);
     const { link, linkToGithub, unlinkFromGithub } = useTaskGithubLink(task.id);
     const [isUpdating, setIsUpdating] = useState(false);
+    const overdue = isOverdue(task.dueDate, task.status);
 
     async function handleStatusShift(newStatus: Task["status"]) {
         setIsUpdating(true);
@@ -116,12 +125,19 @@ function KanbanCard({
             transition={{ duration: 0.2 }}
             className="glass-card p-3.5 sm:p-4 space-y-2.5 w-full max-w-full overflow-hidden"
         >
-            {projectName && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-surface-dark-raised text-slate-600 dark:text-slate-300 text-[10px] font-semibold border border-slate-200/60 dark:border-white/10 w-fit">
-                    <Folder size={10} className="text-ember shrink-0" />
-                    <span className="truncate max-w-[140px]">{projectName}</span>
-                </span>
-            )}
+            <div className="flex items-center justify-between gap-1.5 min-w-0">
+                {projectName && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-surface-dark-raised text-slate-600 dark:text-slate-300 text-[10px] font-semibold border border-slate-200/60 dark:border-white/10 w-fit">
+                        <Folder size={10} className="text-ember shrink-0" />
+                        <span className="truncate max-w-[140px]">{projectName}</span>
+                    </span>
+                )}
+                {overdue && (
+                    <span className="px-1.5 py-0.2 rounded bg-danger/10 text-danger border border-danger/20 text-[10px] font-semibold shrink-0 ml-auto">
+                        Overdue
+                    </span>
+                )}
+            </div>
 
             <div className="flex items-start justify-between gap-2 min-w-0">
                 <h4 className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm leading-snug break-words flex-1 min-w-0">

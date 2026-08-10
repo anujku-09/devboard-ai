@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, UserPlus, Users, Trash2, Mail, ShieldCheck, ShieldAlert, Eye } from "lucide-react";
+import { X, UserPlus, Users, Trash2, Mail, ShieldCheck, ShieldAlert, Eye, Crown } from "lucide-react";
 
 import { useProjectCollaborators } from "../../hooks/useProjectCollaborators";
 import { useAuth } from "../../hooks/useAuth";
@@ -163,8 +163,29 @@ function InviteCollaboratorModal({ open, project, onClose }: InviteCollaboratorM
                         <div className="space-y-2 flex-1 overflow-y-auto min-h-0">
                             <div className="flex items-center justify-between px-1">
                                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                                    Active Team Members ({collaborators.length})
+                                    Active Team Members ({collaborators.length + 1})
                                 </p>
+                            </div>
+
+                            {/* Owner Entry */}
+                            <div className="flex items-center justify-between gap-3 p-2.5 rounded-xl border border-ember/30 bg-ember/5 dark:bg-ember/10 transition-colors">
+                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                    <div className="h-8 w-8 rounded-full bg-ember text-ink flex items-center justify-center font-bold font-mono text-xs shrink-0">
+                                        {user?.email?.charAt(0).toUpperCase() ?? "O"}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                                            {user?.email ?? "Project Owner"}
+                                        </p>
+                                        <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                            Workspace Creator
+                                        </p>
+                                    </div>
+                                </div>
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-ember/20 text-ember border border-ember/30 shrink-0">
+                                    <Crown size={11} />
+                                    <span>Owner</span>
+                                </span>
                             </div>
 
                             {loading ? (
@@ -172,10 +193,6 @@ function InviteCollaboratorModal({ open, project, onClose }: InviteCollaboratorM
                                     {[1, 2].map((i) => (
                                         <div key={i} className="h-12 rounded-xl bg-slate-200/60 dark:bg-white/5 animate-pulse" />
                                     ))}
-                                </div>
-                            ) : collaborators.length === 0 ? (
-                                <div className="p-6 text-center rounded-2xl border border-dashed border-slate-300 dark:border-white/10 text-xs text-slate-400">
-                                    No team members invited yet. Invite your first colleague above!
                                 </div>
                             ) : (
                                 <div className="space-y-1.5">
