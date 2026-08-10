@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CircleDot, GitPullRequest, Link2, Unlink, Edit2, Trash2, ArrowRight, ArrowLeft, CheckCircle2, Clock, ListTodo, ChevronDown, ChevronUp } from "lucide-react";
+import { CircleDot, GitPullRequest, Link2, Unlink, Edit2, Trash2, ArrowRight, ArrowLeft, CheckCircle2, Clock, ListTodo, ChevronDown, ChevronUp, Folder } from "lucide-react";
 import type { Task } from "../../types/task";
 import TaskGithubLinkModal from "./TaskGithubLinkModal";
 import { useTaskGithubLink } from "../../hooks/useTaskGithubLink";
 
 interface KanbanBoardProps {
     tasks: Task[];
+    projectsMap?: Map<string, string>;
     onEdit: (task: Task) => void;
     onDelete: (task: Task) => Promise<void>;
     onStatusChange: (task: Task, newStatus: Task["status"]) => Promise<void>;
@@ -79,11 +80,13 @@ function CollapsibleTaskDescription({ description }: { description: string }) {
 
 function KanbanCard({
     task,
+    projectName,
     onEdit,
     onDelete,
     onStatusChange,
 }: {
     task: Task;
+    projectName?: string;
     onEdit: (task: Task) => void;
     onDelete: (task: Task) => Promise<void>;
     onStatusChange: (task: Task, newStatus: Task["status"]) => Promise<void>;
@@ -113,6 +116,13 @@ function KanbanCard({
             transition={{ duration: 0.2 }}
             className="glass-card p-3.5 sm:p-4 space-y-2.5 w-full max-w-full overflow-hidden"
         >
+            {projectName && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-surface-dark-raised text-slate-600 dark:text-slate-300 text-[10px] font-semibold border border-slate-200/60 dark:border-white/10 w-fit">
+                    <Folder size={10} className="text-ember shrink-0" />
+                    <span className="truncate max-w-[140px]">{projectName}</span>
+                </span>
+            )}
+
             <div className="flex items-start justify-between gap-2 min-w-0">
                 <h4 className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm leading-snug break-words flex-1 min-w-0">
                     {task.title}
@@ -228,7 +238,7 @@ function KanbanCard({
     );
 }
 
-function KanbanBoard({ tasks, onEdit, onDelete, onStatusChange }: KanbanBoardProps) {
+function KanbanBoard({ tasks, projectsMap, onEdit, onDelete, onStatusChange }: KanbanBoardProps) {
     const [mobileActiveStatus, setMobileActiveStatus] = useState<Task["status"]>("Todo");
     const [showAllMobileTasks, setShowAllMobileTasks] = useState(false);
 
@@ -239,7 +249,6 @@ function KanbanBoard({ tasks, onEdit, onDelete, onStatusChange }: KanbanBoardPro
                 {statusColumns.map((col) => {
                     const count = tasks.filter((t) => t.status === col.status).length;
                     const isActive = mobileActiveStatus === col.status;
-
                     return (
                         <button
                             key={col.status}
@@ -248,14 +257,14 @@ function KanbanBoard({ tasks, onEdit, onDelete, onStatusChange }: KanbanBoardPro
                                 setMobileActiveStatus(col.status);
                                 setShowAllMobileTasks(false);
                             }}
-                            className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-lg text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all ${
+                            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all truncate ${
                                 isActive
                                     ? "bg-white dark:bg-surface-dark text-slate-900 dark:text-white shadow-xs"
                                     : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
                             }`}
                         >
-                            <span>{col.title}</span>
-                            <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-200 shrink-0">
+                            <span className="truncate">{col.title}</span>
+                            <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-slate-200/60 dark:bg-white/10 shrink-0">
                                 {count}
                             </span>
                         </button>
@@ -263,28 +272,28 @@ function KanbanBoard({ tasks, onEdit, onDelete, onStatusChange }: KanbanBoardPro
                 })}
             </div>
 
-            {/* Mobile Single Column View with View More */}
-            <div className="md:hidden space-y-2.5">
+            {/* Mobile Single Column View */}
+            <div className="md:hidden space-y-3">
                 {(() => {
-                    const col = statusColumns.find((c) => c.status === mobileActiveStatus)!;
-                    const columnTasks = tasks.filter((t) => t.status === col.status);
-                    const visibleTasks = showAllMobileTasks ? columnTasks : columnTasks.slice(0, 4);
+                    const columnTasks = tasks.filter((t) => t.status === mobileActiveStatus);
+                    const visibleMobileTasks = showAllMobileTasks ? columnTasks : columnTasks.slice(0, 4);
 
                     if (columnTasks.length === 0) {
                         return (
                             <div className="rounded-xl border border-dashed border-slate-300 dark:border-white/10 p-6 text-center text-xs text-slate-400">
-                                No tasks in {col.title.toLowerCase()}
+                                No tasks in {mobileActiveStatus.toLowerCase()}
                             </div>
                         );
                     }
 
                     return (
-                        <div className="space-y-2.5">
+                        <>
                             <AnimatePresence mode="popLayout">
-                                {visibleTasks.map((task) => (
+                                {visibleMobileTasks.map((task) => (
                                     <KanbanCard
                                         key={task.id}
                                         task={task}
+                                        projectName={projectsMap?.get(task.projectId)}
                                         onEdit={onEdit}
                                         onDelete={onDelete}
                                         onStatusChange={onStatusChange}
@@ -313,7 +322,7 @@ function KanbanBoard({ tasks, onEdit, onDelete, onStatusChange }: KanbanBoardPro
                                     </button>
                                 </div>
                             )}
-                        </div>
+                        </>
                     );
                 })()}
             </div>
@@ -360,6 +369,7 @@ function KanbanBoard({ tasks, onEdit, onDelete, onStatusChange }: KanbanBoardPro
                                             <KanbanCard
                                                 key={task.id}
                                                 task={task}
+                                                projectName={projectsMap?.get(task.projectId)}
                                                 onEdit={onEdit}
                                                 onDelete={onDelete}
                                                 onStatusChange={onStatusChange}

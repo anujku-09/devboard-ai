@@ -1,25 +1,37 @@
 import { useMemo, useState } from "react";
-import { Plus, RefreshCw, LayoutGrid, List } from "lucide-react";
+import { Plus, RefreshCw, LayoutGrid, List, Filter } from "lucide-react";
 import TaskList from "../components/tasks/TaskList";
 import KanbanBoard from "../components/tasks/KanbanBoard";
 import TaskModal from "../components/tasks/TaskModal";
 import { useTasks } from "../hooks/useTasks";
+import { useProjects } from "../hooks/useProjects";
 import { useAuth } from "../hooks/useAuth";
 import type { Task } from "../types/task";
 import type { TaskFormData } from "../schemas/taskSchema";
 
 function Tasks() {
   const { user } = useAuth();
-  const { tasks, loading, error, createTask, updateTask, deleteTask, refreshTasks } = useTasks();
+  const { tasks, loading: tasksLoading, error, createTask, updateTask, deleteTask, refreshTasks } = useTasks();
+  const { projects, loading: projectsLoading } = useProjects();
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [open, setOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("all");
+
+  const projectsMap = useMemo(() => {
+    return new Map(projects.map((p) => [p.id, p.name]));
+  }, [projects]);
 
   const visibleTasks = useMemo(() => {
-    return [...tasks].sort(
+    const filtered =
+      selectedProjectId === "all"
+        ? tasks
+        : tasks.filter((t) => t.projectId === selectedProjectId);
+
+    return [...filtered].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [tasks]);
+  }, [tasks, selectedProjectId]);
 
   async function handleSubmit(data: TaskFormData) {
     if (selectedTask) {
@@ -47,7 +59,9 @@ function Tasks() {
     });
   }
 
-  if (loading) {
+  const isLoading = tasksLoading || projectsLoading;
+
+  if (isLoading) {
     return (
       <div className="space-y-4 sm:space-y-6">
         <div className="h-8 w-40 rounded bg-slate-200/60 dark:bg-white/5 animate-pulse" />
@@ -58,13 +72,35 @@ function Tasks() {
 
   return (
     <div className="space-y-3.5 sm:space-y-6 max-w-full overflow-hidden">
-      {/* Desktop Action Header */}
-      <div className="hidden sm:flex items-center justify-between gap-3">
-        <span className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200">
-          All Workspace Tasks ({tasks.length})
-        </span>
+      {/* Action Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 shrink-0">
+            Tasks ({visibleTasks.length})
+          </span>
 
-        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Project Filter Selector */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-surface-dark-raised">
+            <Filter size={13} className="text-ember shrink-0" />
+            <select
+              aria-label="Filter tasks by project"
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="bg-transparent text-slate-800 dark:text-slate-200 text-xs font-semibold focus:outline-none cursor-pointer max-w-[150px] sm:max-w-[200px] truncate"
+            >
+              <option value="all" className="bg-white dark:bg-surface-dark text-slate-800 dark:text-slate-200">
+                All Projects ({projects.length})
+              </option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id} className="bg-white dark:bg-surface-dark text-slate-800 dark:text-slate-200">
+                  📁 {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3">
           <div className="flex items-center p-1 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-surface-dark-raised">
             <button
               type="button"
@@ -92,77 +128,28 @@ function Tasks() {
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => void refreshTasks()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-white/10 px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
-          >
-            <RefreshCw size={14} />
-            <span>Refresh</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void refreshTasks()}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-white/10 px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+            >
+              <RefreshCw size={14} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedTask(null);
-              setOpen(true);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-ember px-3.5 py-1.5 text-xs sm:text-sm font-medium text-ink hover:bg-ember-dark transition-colors"
-          >
-            <Plus size={14} />
-            <span>Add Task</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Mobile Top Action Bar */}
-      <div className="flex sm:hidden items-center justify-between gap-2">
-        <div className="flex items-center p-0.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-surface-dark-raised">
-          <button
-            type="button"
-            onClick={() => setViewMode("kanban")}
-            className={`px-2 py-1 rounded-lg text-xs font-semibold transition-colors ${
-              viewMode === "kanban"
-                ? "bg-white dark:bg-surface-dark text-slate-900 dark:text-white shadow-xs"
-                : "text-slate-500"
-            }`}
-          >
-            Board
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("list")}
-            className={`px-2 py-1 rounded-lg text-xs font-semibold transition-colors ${
-              viewMode === "list"
-                ? "bg-white dark:bg-surface-dark text-slate-900 dark:text-white shadow-xs"
-                : "text-slate-500"
-            }`}
-          >
-            List
-          </button>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => void refreshTasks()}
-            className="p-1.5 rounded-xl border border-slate-300 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
-            title="Refresh tasks"
-          >
-            <RefreshCw size={14} />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedTask(null);
-              setOpen(true);
-            }}
-            className="inline-flex items-center gap-1 rounded-xl bg-ember px-3 py-1 text-xs font-semibold text-ink hover:bg-ember-dark transition-colors"
-          >
-            <Plus size={14} />
-            <span>Add Task</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedTask(null);
+                setOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-ember px-3.5 py-1.5 text-xs sm:text-sm font-medium text-ink hover:bg-ember-dark transition-colors"
+            >
+              <Plus size={14} />
+              <span>Add Task</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -175,6 +162,7 @@ function Tasks() {
       {viewMode === "kanban" ? (
         <KanbanBoard
           tasks={visibleTasks}
+          projectsMap={projectsMap}
           onEdit={(task) => {
             setSelectedTask(task);
             setOpen(true);
@@ -185,6 +173,7 @@ function Tasks() {
       ) : (
         <TaskList
           tasks={visibleTasks}
+          projectsMap={projectsMap}
           onEdit={(task) => {
             setSelectedTask(task);
             setOpen(true);

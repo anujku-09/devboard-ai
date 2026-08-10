@@ -5,11 +5,12 @@ import TaskCard from "./TaskCard";
 
 interface TaskListProps {
   tasks: Task[];
+  projectsMap?: Map<string, string>;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => Promise<void>;
 }
 
-function TaskList({ tasks, onEdit, onDelete }: TaskListProps) {
+function TaskList({ tasks, projectsMap, onEdit, onDelete }: TaskListProps) {
   if (tasks.length === 0) {
     return (
       <motion.div
@@ -23,11 +24,11 @@ function TaskList({ tasks, onEdit, onDelete }: TaskListProps) {
         </div>
 
         <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">
-          No tasks yet
+          No tasks found
         </h3>
 
         <p className="text-slate-500 dark:text-slate-400 mt-2">
-          Create your first task to get started.
+          Create your first task or change project filters to view tasks.
         </p>
       </motion.div>
     );
@@ -45,7 +46,12 @@ function TaskList({ tasks, onEdit, onDelete }: TaskListProps) {
             exit={{ opacity: 0, scale: 0.97 }}
             transition={{ duration: 0.25, delay: index * 0.04 }}
           >
-            <TaskCard task={task} onEdit={onEdit} onDelete={onDelete} />
+            <TaskCard
+              task={task}
+              projectName={projectsMap?.get(task.projectId)}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
           </motion.div>
         ))}
       </AnimatePresence>

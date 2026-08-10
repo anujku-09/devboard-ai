@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { CircleDot, GitPullRequest, Link2, Unlink } from "lucide-react";
+import { CircleDot, GitPullRequest, Link2, Unlink, Folder } from "lucide-react";
 import type { Task } from "../../types/task";
 import TaskGithubLinkModal from "./TaskGithubLinkModal";
 import { useTaskGithubLink } from "../../hooks/useTaskGithubLink";
 
 interface TaskCardProps {
   task: Task;
+  projectName?: string;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => Promise<void>;
 }
@@ -52,7 +53,7 @@ function CollapsibleTaskDescription({ description }: { description: string }) {
   );
 }
 
-function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
+function TaskCard({ task, projectName, onEdit, onDelete }: TaskCardProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [linkModalOpen, setLinkModalOpen] = useState(false);
@@ -77,6 +78,12 @@ function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
     >
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 min-w-0">
         <div className="min-w-0 flex-1 space-y-1">
+          {projectName && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-surface-dark-raised text-slate-600 dark:text-slate-300 text-[10px] font-semibold border border-slate-200/60 dark:border-white/10 w-fit mb-1">
+              <Folder size={10} className="text-ember shrink-0" />
+              <span className="truncate max-w-[140px]">{projectName}</span>
+            </span>
+          )}
           <h2 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white leading-snug break-words">
             {task.title}
           </h2>
