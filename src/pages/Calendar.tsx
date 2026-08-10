@@ -89,7 +89,7 @@ function Calendar() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 max-w-full overflow-hidden">
+    <div className="space-y-3.5 sm:space-y-6 max-w-full overflow-hidden">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
@@ -100,7 +100,7 @@ function Calendar() {
             <h1 className="font-display text-base sm:text-2xl font-bold text-slate-900 dark:text-white truncate">
               Calendar & Timeline
             </h1>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 truncate">
+            <p className="hidden sm:block text-xs sm:text-sm text-slate-500 dark:text-slate-400">
               Visualize task deadlines, project milestones, and upcoming deliverables.
             </p>
           </div>
@@ -134,16 +134,17 @@ function Calendar() {
               setInitialDueDate(null);
               setModalOpen(true);
             }}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-ember px-3.5 py-1.5 text-xs sm:text-sm font-medium text-ink hover:bg-ember-dark transition-colors shrink-0 shadow-xs"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-ember px-3 py-1.5 sm:px-3.5 text-xs sm:text-sm font-medium text-ink hover:bg-ember-dark transition-colors shrink-0 shadow-xs"
           >
             <Plus size={14} />
-            <span>Add Task</span>
+            <span className="hidden sm:inline">Add Task</span>
+            <span className="sm:hidden">Task</span>
           </button>
         </div>
       </div>
 
       {/* Main Grid: Calendar View + Side Deadlines Widget */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_280px] items-start">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-[1fr_280px] items-start">
         <CalendarView
           tasks={visibleTasks}
           projectsMap={projectsMap}
@@ -152,34 +153,34 @@ function Calendar() {
         />
 
         {/* Side Upcoming Deadlines Panel */}
-        <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/10 rounded-2xl p-4 space-y-3 shadow-xs">
+        <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/10 rounded-2xl p-3.5 sm:p-4 space-y-3 shadow-xs">
           <div className="flex items-center gap-2 border-b border-slate-200 dark:border-white/10 pb-2">
-            <Clock size={16} className="text-ember shrink-0" />
-            <h3 className="font-semibold text-slate-900 dark:text-white text-sm">
+            <Clock size={15} className="text-ember shrink-0" />
+            <h3 className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm">
               Next 7 Days ({upcomingDeadlines.length})
             </h3>
           </div>
 
           {upcomingDeadlines.length === 0 ? (
-            <p className="text-xs text-slate-400 py-4 text-center">
+            <p className="text-xs text-slate-400 py-3 text-center">
               No deadlines in the next 7 days.
             </p>
           ) : (
-            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
               {upcomingDeadlines.map((t) => (
                 <div
                   key={t.id}
                   onClick={() => handleEditTask(t)}
                   className="cursor-pointer p-2.5 rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50/50 dark:bg-surface-dark-raised/50 hover:border-ember/40 transition-colors space-y-1"
                 >
-                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 leading-snug break-words line-clamp-2">
                     {t.title}
                   </p>
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pt-0.5">
                     <span>Due: {t.dueDate}</span>
                     {projectsMap?.get(t.projectId) && (
-                      <span className="flex items-center gap-0.5 truncate max-w-[100px]">
-                        <Folder size={9} className="text-ember" />
+                      <span className="flex items-center gap-0.5 truncate max-w-[110px]">
+                        <Folder size={9} className="text-ember shrink-0" />
                         <span className="truncate">{projectsMap.get(t.projectId)}</span>
                       </span>
                     )}

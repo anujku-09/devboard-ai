@@ -132,23 +132,23 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
   const selectedDayTasks = tasksByDate.get(selectedMobileDate) || [];
 
   return (
-    <div className="space-y-4 w-full max-w-full overflow-hidden">
+    <div className="space-y-3 sm:space-y-4 w-full max-w-full overflow-hidden">
       {/* Calendar Header Controls */}
-      <div className="flex items-center justify-between gap-2 bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/10 rounded-2xl p-3 sm:p-4 shadow-xs">
+      <div className="flex items-center justify-between gap-2 bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/10 rounded-2xl p-2.5 sm:p-4 shadow-xs">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <h2 className="font-display text-base sm:text-xl font-bold text-slate-900 dark:text-white truncate">
+          <h2 className="font-display text-sm sm:text-xl font-bold text-slate-900 dark:text-white truncate">
             {MONTH_NAMES[month]} {year}
           </h2>
           <button
             type="button"
             onClick={handleToday}
-            className="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-semibold rounded-lg border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors shrink-0"
+            className="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-xs font-semibold rounded-lg border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors shrink-0"
           >
             Today
           </button>
         </div>
 
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
             onClick={handlePrevMonth}
@@ -169,7 +169,7 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
       </div>
 
       {/* Days of Week Header */}
-      <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center text-[10px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400">
+      <div className="grid grid-cols-7 gap-0.5 sm:gap-2 text-center text-[10px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400">
         {DAYS_OF_WEEK_FULL.map((day, idx) => (
           <div key={day} className="py-0.5">
             <span className="hidden sm:inline">{day}</span>
@@ -179,7 +179,7 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
       </div>
 
       {/* 7-Column Grid Matrix */}
-      <div className="grid grid-cols-7 gap-1 sm:gap-2">
+      <div className="grid grid-cols-7 gap-0.5 sm:gap-2">
         {calendarDays.map((cell) => {
           const dayTasks = tasksByDate.get(cell.dateStr) || [];
           const isToday = cell.dateStr === todayStr;
@@ -190,7 +190,7 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
               key={cell.dateStr}
               layout
               onClick={() => setSelectedMobileDate(cell.dateStr)}
-              className={`group min-h-[58px] sm:min-h-[110px] p-1 sm:p-2 rounded-xl border flex flex-col justify-between cursor-pointer transition-all overflow-hidden ${
+              className={`group min-h-[52px] sm:min-h-[110px] p-1 sm:p-2 rounded-xl border flex flex-col justify-between cursor-pointer transition-all overflow-hidden ${
                 cell.isCurrentMonth
                   ? "bg-white dark:bg-surface-dark border-slate-200 dark:border-white/10 hover:border-ember/40"
                   : "bg-slate-50/50 dark:bg-surface-dark-raised/30 border-slate-200/50 dark:border-white/5 text-slate-400 opacity-60"
@@ -201,7 +201,7 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
               {/* Day Header */}
               <div className="flex items-center justify-between gap-1">
                 <span
-                  className={`text-[10px] sm:text-xs font-bold font-mono h-5 w-5 sm:h-6 sm:w-6 rounded-full flex items-center justify-center ${
+                  className={`text-[10px] sm:text-xs font-bold font-mono h-4.5 w-4.5 sm:h-6 sm:w-6 rounded-full flex items-center justify-center ${
                     isToday
                       ? "bg-ember text-ink"
                       : cell.isCurrentMonth
@@ -218,7 +218,7 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
                     e.stopPropagation();
                     onSelectDate(cell.dateStr);
                   }}
-                  className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-0.5 sm:p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-ember transition-all"
+                  className="hidden sm:block opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-ember transition-all"
                   title={`Add task for ${cell.dateStr}`}
                 >
                   <Plus size={12} />
@@ -261,7 +261,7 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
               </div>
 
               {/* Mobile Indicator Dots (Phone View) */}
-              <div className="sm:hidden flex items-center justify-center gap-0.5 my-0.5 flex-wrap max-h-[16px] overflow-hidden">
+              <div className="sm:hidden flex items-center justify-center gap-0.5 my-0.5 flex-wrap max-h-[14px] overflow-hidden">
                 {dayTasks.slice(0, 3).map((t) => (
                   <span
                     key={t.id}
@@ -292,11 +292,11 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.2 }}
-          className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/10 rounded-2xl p-3.5 sm:p-4 space-y-2.5 shadow-xs"
+          className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/10 rounded-2xl p-3 sm:p-4 space-y-2.5 shadow-xs"
         >
           <div className="flex items-center justify-between gap-2 border-b border-slate-200 dark:border-white/10 pb-2">
             <div className="flex items-center gap-2 min-w-0">
-              <CalendarIcon size={16} className="text-ember shrink-0" />
+              <CalendarIcon size={15} className="text-ember shrink-0" />
               <h3 className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm truncate">
                 Agenda for {selectedMobileDate} ({selectedDayTasks.length})
               </h3>
@@ -305,7 +305,7 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
             <button
               type="button"
               onClick={() => onSelectDate(selectedMobileDate)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-ember/10 text-ember hover:bg-ember/20 text-xs font-semibold transition-colors shrink-0"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-ember text-ink hover:bg-ember-dark text-xs font-semibold transition-colors shrink-0 shadow-xs"
             >
               <Plus size={13} />
               <span>Add Task</span>
@@ -313,7 +313,7 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
           </div>
 
           {selectedDayTasks.length === 0 ? (
-            <p className="text-xs text-slate-400 py-3 text-center">
+            <p className="text-xs text-slate-400 py-2.5 text-center">
               No tasks scheduled for this date. Click <span className="font-semibold text-ember">+ Add Task</span> to create one!
             </p>
           ) : (
@@ -338,7 +338,7 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
                         {projectName && (
                           <span className="flex items-center gap-1 text-[10px] text-slate-400 truncate">
                             <Folder size={10} className="text-ember shrink-0" />
-                            <span className="truncate">{projectName}</span>
+                            <span className="truncate max-w-[120px]">{projectName}</span>
                           </span>
                         )}
                       </div>
