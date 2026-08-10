@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { CircleDot, GitPullRequest, Link2, Unlink, Folder } from "lucide-react";
+import { CircleDot, GitPullRequest, Link2, Unlink, Folder, Calendar } from "lucide-react";
 import type { Task } from "../../types/task";
 import TaskGithubLinkModal from "./TaskGithubLinkModal";
 import { useTaskGithubLink } from "../../hooks/useTaskGithubLink";
@@ -102,6 +102,7 @@ function TaskCard({ task, projectName, onEdit, onDelete }: TaskCardProps) {
           )}
           {task.dueDate && (
             <div className="flex items-center gap-1.5 pt-0.5">
+              <Calendar size={13} className={overdue ? "text-danger" : "text-slate-400"} />
               <p
                 className={`text-[11px] sm:text-xs font-mono ${
                   overdue ? "text-danger font-semibold" : "text-slate-400"

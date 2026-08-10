@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CircleDot, GitPullRequest, Link2, Unlink, Edit2, Trash2, ArrowRight, ArrowLeft, CheckCircle2, Clock, ListTodo, ChevronDown, ChevronUp, Folder } from "lucide-react";
+import { CircleDot, GitPullRequest, Link2, Unlink, Edit2, Trash2, ArrowRight, ArrowLeft, CheckCircle2, Clock, ListTodo, ChevronDown, ChevronUp, Folder, Calendar } from "lucide-react";
 import type { Task } from "../../types/task";
 import TaskGithubLinkModal from "./TaskGithubLinkModal";
 import { useTaskGithubLink } from "../../hooks/useTaskGithubLink";
@@ -152,6 +152,15 @@ function KanbanCard({
 
             {task.description && (
                 <CollapsibleTaskDescription description={task.description} />
+            )}
+
+            {task.dueDate && (
+                <div className="flex items-center gap-1 text-[11px] font-mono text-slate-400 dark:text-slate-400">
+                    <Calendar size={11} className={overdue ? "text-danger" : "text-slate-400"} />
+                    <span className={overdue ? "text-danger font-semibold" : ""}>
+                        Due: {task.dueDate}
+                    </span>
+                </div>
             )}
 
             {/* GitHub Link Badge */}
