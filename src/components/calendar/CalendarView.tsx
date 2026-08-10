@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, Plus, Folder, CheckCircle2, Clock, ListTodo, Calendar as CalendarIcon, Edit2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { ChevronLeft, ChevronRight, Plus, Folder, CheckCircle2, Clock, ListTodo } from "lucide-react";
 import type { Task } from "../../types/task";
 
 interface CalendarViewProps {
@@ -44,9 +44,6 @@ function formatDateKey(year: number, month: number, day: number): string {
 function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: CalendarViewProps) {
   const today = new Date();
   const [currentDate, setCurrentDate] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), 1));
-  const [selectedMobileDate, setSelectedMobileDate] = useState<string>(
-    formatDateKey(today.getFullYear(), today.getMonth(), today.getDate())
-  );
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -126,10 +123,7 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
   function handleToday() {
     const freshToday = new Date();
     setCurrentDate(new Date(freshToday.getFullYear(), freshToday.getMonth(), 1));
-    setSelectedMobileDate(formatDateKey(freshToday.getFullYear(), freshToday.getMonth(), freshToday.getDate()));
   }
-
-  const selectedDayTasks = tasksByDate.get(selectedMobileDate) || [];
 
   return (
     <div className="space-y-3 sm:space-y-4 w-full max-w-full overflow-hidden">
@@ -183,20 +177,17 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
         {calendarDays.map((cell) => {
           const dayTasks = tasksByDate.get(cell.dateStr) || [];
           const isToday = cell.dateStr === todayStr;
-          const isSelected = cell.dateStr === selectedMobileDate;
 
           return (
             <motion.div
               key={cell.dateStr}
               layout
-              onClick={() => setSelectedMobileDate(cell.dateStr)}
+              onClick={() => onSelectDate(cell.dateStr)}
               className={`group min-h-[52px] sm:min-h-[110px] p-1 sm:p-2 rounded-xl border flex flex-col justify-between cursor-pointer transition-all overflow-hidden ${
                 cell.isCurrentMonth
                   ? "bg-white dark:bg-surface-dark border-slate-200 dark:border-white/10 hover:border-ember/40"
                   : "bg-slate-50/50 dark:bg-surface-dark-raised/30 border-slate-200/50 dark:border-white/5 text-slate-400 opacity-60"
-              } ${isToday ? "ring-2 ring-ember bg-ember/5 dark:bg-ember/10" : ""} ${
-                isSelected ? "border-ember dark:border-ember shadow-xs" : ""
-              }`}
+              } ${isToday ? "ring-2 ring-ember bg-ember/5 dark:bg-ember/10" : ""}`}
             >
               {/* Day Header */}
               <div className="flex items-center justify-between gap-1">
@@ -283,89 +274,6 @@ function CalendarView({ tasks, projectsMap, onSelectDate, onEditTask }: Calendar
           );
         })}
       </div>
-
-      {/* Selected Mobile Date Agenda Card */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={selectedMobileDate}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.2 }}
-          className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/10 rounded-2xl p-3 sm:p-4 space-y-2.5 shadow-xs"
-        >
-          <div className="flex items-center justify-between gap-2 border-b border-slate-200 dark:border-white/10 pb-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <CalendarIcon size={15} className="text-ember shrink-0" />
-              <h3 className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm truncate">
-                Agenda for {selectedMobileDate} ({selectedDayTasks.length})
-              </h3>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => onSelectDate(selectedMobileDate)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-ember text-ink hover:bg-ember-dark text-xs font-semibold transition-colors shrink-0 shadow-xs"
-            >
-              <Plus size={13} />
-              <span>Add Task</span>
-            </button>
-          </div>
-
-          {selectedDayTasks.length === 0 ? (
-            <p className="text-xs text-slate-400 py-2.5 text-center">
-              No tasks scheduled for this date. Click <span className="font-semibold text-ember">+ Add Task</span> to create one!
-            </p>
-          ) : (
-            <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-              {selectedDayTasks.map((t) => {
-                const Icon = statusIcons[t.status];
-                const projectName = projectsMap?.get(t.projectId);
-                const isPastDue = t.status !== "Completed" && selectedMobileDate < todayStr;
-
-                return (
-                  <div
-                    key={t.id}
-                    onClick={() => onEditTask(t)}
-                    className="cursor-pointer p-2.5 rounded-xl border border-slate-200/80 dark:border-white/10 bg-slate-50/50 dark:bg-surface-dark-raised/50 hover:border-ember/40 transition-colors flex items-center justify-between gap-2"
-                  >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <Icon size={14} className={isPastDue ? "text-danger shrink-0" : "text-ember shrink-0"} />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate">
-                          {t.title}
-                        </p>
-                        {projectName && (
-                          <span className="flex items-center gap-1 text-[10px] text-slate-400 truncate">
-                            <Folder size={10} className="text-ember shrink-0" />
-                            <span className="truncate max-w-[120px]">{projectName}</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${priorityPillStyles[t.priority]}`}>
-                        {t.priority}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEditTask(t);
-                        }}
-                        className="p-1 rounded-lg text-slate-400 hover:text-ember hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
-                      >
-                        <Edit2 size={12} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </motion.div>
-      </AnimatePresence>
     </div>
   );
 }
