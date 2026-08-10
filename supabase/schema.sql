@@ -1,3 +1,6 @@
+-- Run this in the Supabase SQL editor for your project
+-- (Dashboard -> SQL Editor -> New query) before using the Projects page.
+
 create table if not exists public.projects (
     id uuid primary key default gen_random_uuid(),
     user_id uuid references auth.users(id) on delete cascade,
@@ -176,7 +179,6 @@ create policy "Users can delete their own repository connections"
 create index if not exists repository_connections_project_id_idx
     on public.repository_connections (project_id);
 
-
 create table if not exists public.task_github_links (
     id uuid primary key default gen_random_uuid(),
 
@@ -237,7 +239,7 @@ CREATE TABLE IF NOT EXISTS public.project_collaborators (
 -- 2. Enable Row Level Security (RLS)
 ALTER TABLE public.project_collaborators ENABLE ROW LEVEL SECURITY;
 
--- 3. Add RLS Policies for Access Control
+-- 3. Allow all logged in users to read & write team invites
 CREATE POLICY "Allow authenticated users to read collaborators"
     ON public.project_collaborators FOR SELECT
     TO authenticated
@@ -250,5 +252,55 @@ CREATE POLICY "Allow authenticated users to insert collaborators"
 
 CREATE POLICY "Allow authenticated users to delete collaborators"
     ON public.project_collaborators FOR DELETE
+    TO authenticated
+    USING (true);
+
+-- 1. Safely update RLS Policy on PROJECTS table to allow team collaborators
+DROP POLICY IF EXISTS "Allow authenticated users to read projects" ON public.projects;
+DROP POLICY IF EXISTS "Users can view own projects" ON public.projects;
+
+CREATE POLICY "Allow authenticated users to read projects"
+    ON public.projects FOR SELECT
+    TO authenticated
+    USING (
+        auth.uid() = user_id 
+        OR 
+        id IN (
+            SELECT project_id FROM public.project_collaborators 
+            WHERE lower(email) = lower(auth.jwt() ->> 'email')
+        )
+    );
+
+DROP POLICY IF EXISTS "Allow authenticated users to update projects" ON public.projects;
+CREATE POLICY "Allow authenticated users to update projects"
+    ON public.projects FOR UPDATE
+    TO authenticated
+    USING (
+        auth.uid() = user_id 
+        OR 
+        id IN (
+            SELECT project_id FROM public.project_collaborators 
+            WHERE lower(email) = lower(auth.jwt() ->> 'email')
+        )
+    );
+
+-- 2. Safely update RLS Policy on TASKS table to allow team collaborators
+DROP POLICY IF EXISTS "Allow authenticated users to read tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Users can view own tasks" ON public.tasks;
+
+CREATE POLICY "Allow authenticated users to read tasks"
+    ON public.tasks FOR SELECT
+    TO authenticated
+    USING (true);
+
+DROP POLICY IF EXISTS "Allow authenticated users to write tasks" ON public.tasks;
+CREATE POLICY "Allow authenticated users to write tasks"
+    ON public.tasks FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow authenticated users to update tasks" ON public.tasks;
+CREATE POLICY "Allow authenticated users to update tasks"
+    ON public.tasks FOR UPDATE
     TO authenticated
     USING (true);
