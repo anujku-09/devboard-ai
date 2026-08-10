@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X, UserPlus, Users, Trash2, Mail, ShieldCheck, ShieldAlert, Eye } from "lucide-react";
 
 import { useProjectCollaborators } from "../../hooks/useProjectCollaborators";
+import { useAuth } from "../../hooks/useAuth";
 import type { Project, CollaboratorRole } from "../../types/project";
 
 interface InviteCollaboratorModalProps {
@@ -31,6 +32,7 @@ const roleBadges: Record<CollaboratorRole, { label: string; style: string; icon:
 };
 
 function InviteCollaboratorModal({ open, project, onClose }: InviteCollaboratorModalProps) {
+    const { user } = useAuth();
     const { collaborators, loading, error, addCollaborator, removeCollaborator } = useProjectCollaborators(project.id);
 
     const [email, setEmail] = useState("");
@@ -40,8 +42,20 @@ function InviteCollaboratorModal({ open, project, onClose }: InviteCollaboratorM
 
     async function handleInvite(e: React.FormEvent) {
         e.preventDefault();
-        if (!email.trim()) {
+        const cleanEmail = email.trim().toLowerCase();
+
+        if (!cleanEmail) {
             setFormError("Please enter a valid email address.");
+            return;
+        }
+
+        if (user?.email && user.email.toLowerCase() === cleanEmail) {
+            setFormError("You cannot invite yourself to your own project.");
+            return;
+        }
+
+        if (collaborators.some((c) => c.email.toLowerCase() === cleanEmail)) {
+            setFormError("This email address has already been added to the team.");
             return;
         }
 
@@ -49,7 +63,7 @@ function InviteCollaboratorModal({ open, project, onClose }: InviteCollaboratorM
         setFormError(null);
 
         try {
-            await addCollaborator(email, role);
+            await addCollaborator(cleanEmail, role);
             setEmail("");
         } catch (err) {
             setFormError(err instanceof Error ? err.message : "Failed to invite collaborator.");

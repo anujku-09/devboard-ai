@@ -19,10 +19,21 @@ function mapCollaborator(row: CollaboratorRow): ProjectCollaborator {
     };
 }
 
+function deduplicateCollaborators(list: ProjectCollaborator[]): ProjectCollaborator[] {
+    const seen = new Set<string>();
+    return list.filter((item) => {
+        const lower = item.email.toLowerCase();
+        if (seen.has(lower)) return false;
+        seen.add(lower);
+        return true;
+    });
+}
+
 function getLocalCollaborators(projectId: string): ProjectCollaborator[] {
     try {
         const raw = localStorage.getItem(`collaborators_${projectId}`);
-        return raw ? JSON.parse(raw) : [];
+        const parsed: ProjectCollaborator[] = raw ? JSON.parse(raw) : [];
+        return deduplicateCollaborators(parsed);
     } catch {
         return [];
     }
@@ -61,7 +72,8 @@ export async function getProjectCollaborators(projectId: string): Promise<Projec
             return getLocalCollaborators(projectId);
         }
 
-        return (data as CollaboratorRow[]).map(mapCollaborator);
+        const mapped = (data as CollaboratorRow[]).map(mapCollaborator);
+        return deduplicateCollaborators(mapped);
     } catch {
         return getLocalCollaborators(projectId);
     }
@@ -72,10 +84,18 @@ export async function addProjectCollaborator(
     email: string,
     role: CollaboratorRole
 ): Promise<ProjectCollaborator> {
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Check existing collaborators first
+    const existing = await getProjectCollaborators(projectId);
+    if (existing.some((c) => c.email.toLowerCase() === cleanEmail)) {
+        throw new Error("This email address has already been added to the team.");
+    }
+
     const newCollaborator: ProjectCollaborator = {
         id: `collab-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         projectId,
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         role,
         createdAt: new Date().toISOString(),
     };
@@ -85,7 +105,7 @@ export async function addProjectCollaborator(
             .from("project_collaborators")
             .insert({
                 project_id: projectId,
-                email: email.trim().toLowerCase(),
+                email: cleanEmail,
                 role,
             })
             .select()
