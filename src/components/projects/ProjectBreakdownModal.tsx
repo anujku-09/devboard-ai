@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, Sparkles, RefreshCw } from "lucide-react";
 
@@ -82,7 +83,7 @@ function ProjectBreakdownModal({ open, project, onClose, onTasksCreated }: Proje
         }
     }
 
-    return (
+    return createPortal(
         <AnimatePresence>
             {open && (
                 <motion.div
@@ -227,7 +228,8 @@ function ProjectBreakdownModal({ open, project, onClose, onTasksCreated }: Proje
                     </motion.div>
                 </motion.div>
             )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
     );
 }
 
