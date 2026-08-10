@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+/* Enables the `dark:` variant to be toggled by a `.dark` class on <html>,
+   instead of only following the OS-level color scheme (Tailwind v4 default). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------
+   DevBoard AI design tokens
+   Palette: Rich indigo-slate dark mode for comfortable contrast.
+   --------------------------------------------------------------------- */
+@theme {
+    --font-display: "Sora", "Inter", ui-sans-serif, sans-serif;
+    --font-body: "Inter", ui-sans-serif, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+    --color-paper: #f8fafc;
+    --color-ink: #090d18;
+    --color-surface-dark: #161c32;
+    --color-surface-dark-raised: #212946;
+
+    --color-ember: #f5a524;
+    --color-ember-dark: #d9890e;
+    --color-signal: #10b981;
+    --color-danger: #ef4444;
+}
+
+html, body {
+    max-width: 100vw;
+    overflow-x: hidden;
+    color-scheme: light dark;
+}
+
+body {
+    font-family: var(--font-body);
+    @apply bg-paper text-slate-900 dark:bg-ink dark:text-slate-100 antialiased selection:bg-ember/30 selection:text-ember;
+    transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Glassmorphism & Custom Card Utilities */
+.glass-card {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    transition: all 0.2s ease;
+}
+
+:where(.dark, .dark *) .glass-card {
+    background-color: var(--color-surface-dark);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.glass-card-hover {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    transition: all 0.2s ease;
+}
+
+:where(.dark, .dark *) .glass-card-hover {
+    background-color: var(--color-surface-dark);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+@media (hover: hover) {
+    .glass-card-hover:hover {
+        transform: translateY(-2px);
+        border-color: rgba(245, 165, 36, 0.4);
+    }
+}
+
+.glow-ember {
+    box-shadow: 0 0 20px -4px rgba(245, 165, 36, 0.2);
+}
+
+.glow-signal {
+    box-shadow: 0 0 20px -4px rgba(16, 185, 129, 0.2);
+}
+
+/* Custom Sleek Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 dark:bg-white/10 rounded-full hover:bg-slate-400 dark:hover:bg-white/20 transition-colors;
+}
+
+/* Signature element: a blinking terminal-style cursor used next to the
+   DevBoard wordmark, echoing the product's developer-tool identity. */
+.brand-cursor {
+    display: inline-block;
+    width: 0.14em;
+    margin-left: 0.1em;
+    background-color: var(--color-ember);
+    animation: brand-blink 1.1s steps(1) infinite;
+}
+
+@keyframes brand-blink {
+    50% {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .brand-cursor {
+        animation: none;
+    }
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+    }
+}

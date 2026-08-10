@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <rect x="3" y="3" width="94" height="94" rx="24" fill="url(#logo-bg-grad)" fill-opacity="0.12" stroke="#FF5500" stroke-opacity="0.3" stroke-width="3" />
+  <path d="M26 34L44 50L26 66" stroke="#FF5500" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+  <line x1="52" y1="66" x2="74" y2="66" stroke="#10B981" stroke-width="8" stroke-linecap="round" />
+  <defs>
+    <linearGradient id="logo-bg-grad" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF5500" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+  </defs>
+</svg>
