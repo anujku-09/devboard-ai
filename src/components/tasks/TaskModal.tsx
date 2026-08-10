@@ -8,7 +8,7 @@ import { useProjects } from "../../hooks/useProjects";
 import type { Task } from "../../types/task";
 
 interface TaskModalProps {
-  initialValues?: Task | null;
+  initialValues?: Partial<Task> | null;
   onSubmit: (values: TaskFormData) => Promise<void>;
   onClose: () => void;
 }

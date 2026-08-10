@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { Plus, RefreshCw, LayoutGrid, List, Filter } from "lucide-react";
+import { Plus, RefreshCw, LayoutGrid, List, Filter, Calendar as CalendarIcon } from "lucide-react";
 import TaskList from "../components/tasks/TaskList";
 import KanbanBoard from "../components/tasks/KanbanBoard";
+import CalendarView from "../components/calendar/CalendarView";
 import TaskModal from "../components/tasks/TaskModal";
 import { useTasks } from "../hooks/useTasks";
 import { useProjects } from "../hooks/useProjects";
@@ -15,7 +16,8 @@ function Tasks() {
   const { projects, loading: projectsLoading } = useProjects();
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [open, setOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
+  const [initialDueDate, setInitialDueDate] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"kanban" | "list" | "calendar">("kanban");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("all");
 
   const projectsMap = useMemo(() => {
@@ -50,6 +52,7 @@ function Tasks() {
 
     setOpen(false);
     setSelectedTask(null);
+    setInitialDueDate(null);
   }
 
   async function handleStatusChange(task: Task, newStatus: Task["status"]) {
@@ -57,6 +60,12 @@ function Tasks() {
       ...task,
       status: newStatus,
     });
+  }
+
+  function handleSelectDate(dateStr: string) {
+    setSelectedTask(null);
+    setInitialDueDate(dateStr);
+    setOpen(true);
   }
 
   const isLoading = tasksLoading || projectsLoading;
@@ -126,6 +135,18 @@ function Tasks() {
               <List size={14} />
               <span>List</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("calendar")}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                viewMode === "calendar"
+                  ? "bg-white dark:bg-surface-dark text-slate-900 dark:text-white shadow-xs"
+                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              }`}
+            >
+              <CalendarIcon size={14} />
+              <span>Calendar</span>
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -142,6 +163,7 @@ function Tasks() {
               type="button"
               onClick={() => {
                 setSelectedTask(null);
+                setInitialDueDate(null);
                 setOpen(true);
               }}
               className="inline-flex items-center gap-1.5 rounded-xl bg-ember px-3.5 py-1.5 text-xs sm:text-sm font-medium text-ink hover:bg-ember-dark transition-colors"
@@ -165,20 +187,33 @@ function Tasks() {
           projectsMap={projectsMap}
           onEdit={(task) => {
             setSelectedTask(task);
+            setInitialDueDate(null);
             setOpen(true);
           }}
           onDelete={(task) => deleteTask(task.id)}
           onStatusChange={handleStatusChange}
         />
-      ) : (
+      ) : viewMode === "list" ? (
         <TaskList
           tasks={visibleTasks}
           projectsMap={projectsMap}
           onEdit={(task) => {
             setSelectedTask(task);
+            setInitialDueDate(null);
             setOpen(true);
           }}
           onDelete={(task) => deleteTask(task.id)}
+        />
+      ) : (
+        <CalendarView
+          tasks={visibleTasks}
+          projectsMap={projectsMap}
+          onSelectDate={handleSelectDate}
+          onEditTask={(task) => {
+            setSelectedTask(task);
+            setInitialDueDate(null);
+            setOpen(true);
+          }}
         />
       )}
 
@@ -186,10 +221,17 @@ function Tasks() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-3 sm:p-4 backdrop-blur-sm">
           <div className="w-full max-w-2xl rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-surface-dark p-4 sm:p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <TaskModal
-              initialValues={selectedTask}
+              initialValues={
+                selectedTask
+                  ? selectedTask
+                  : initialDueDate
+                  ? { dueDate: initialDueDate }
+                  : undefined
+              }
               onClose={() => {
                 setOpen(false);
                 setSelectedTask(null);
+                setInitialDueDate(null);
               }}
               onSubmit={handleSubmit}
             />

@@ -11,6 +11,7 @@ import ProjectDetails from "./components/projects/ProjectDetails";
 import RepositoryDashboard from "./pages/RepositoryDashboard";
 import RepositoryHub from "./pages/RepositoryHub";
 import Tasks from "./pages/Tasks";
+import Calendar from "./pages/Calendar";
 import Settings from "./pages/Settings";
 
 import DashboardLayout from "./layouts/DashboardLayout";
@@ -37,6 +38,7 @@ function App() {
         <Route path="/projects/:projectId/repository" element={<RepositoryDashboard />} />
         <Route path="/repositories" element={<RepositoryHub />} />
         <Route path="/tasks" element={<Tasks />} />
+        <Route path="/calendar" element={<Calendar />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
 

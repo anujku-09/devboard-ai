@@ -3,6 +3,7 @@ import {
     LayoutDashboard,
     FolderKanban,
     CheckSquare,
+    Calendar,
     Settings,
     LogOut,
     Sparkles,
@@ -88,6 +89,7 @@ function Sidebar({ isOpen, onClose }: SidebarProps) {
         { title: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
         { title: "Projects", path: "/projects", icon: FolderKanban },
         { title: "Tasks", path: "/tasks", icon: CheckSquare },
+        { title: "Calendar", path: "/calendar", icon: Calendar },
         {
             title: "Repository Hub",
             path: "/repositories",
