@@ -155,7 +155,8 @@ export async function suggestNextTask(
     tasks: Task[],
     projectName: string,
     recentCommitMessages: string[] = [],
-    forceRefresh: boolean = false
+    forceRefresh: boolean = false,
+    collaboratorsCount: number = 1
 ): Promise<AiTaskSuggestion> {
     const uncompleted = tasks.filter((t) => t.status !== "Completed");
 
@@ -163,7 +164,7 @@ export async function suggestNextTask(
         throw new Error("All tasks are already completed! Add more tasks or create a new feature.");
     }
 
-    const cacheKey = `ai_suggestion_${projectName.replace(/\s+/g, "_")}_${uncompleted.length}`;
+    const cacheKey = `ai_suggestion_${projectName.replace(/\s+/g, "_")}_${uncompleted.length}_collab_${collaboratorsCount}`;
 
     return cacheAiResponse(
         cacheKey,
@@ -184,18 +185,19 @@ export async function suggestNextTask(
                 ? recentCommitMessages.map((c) => `- ${c}`).join("\n")
                 : "No recent commits recorded.";
 
-            const prompt = `You are an expert AI engineering manager. Help a software developer decide what to work on next.
+            const prompt = `You are an expert AI engineering manager evaluating team workload.
 
 Project Name: ${projectName}
+Active Team Collaborators: ${collaboratorsCount} member(s)
 
 Uncompleted Tasks Available:
 ${taskListText}
 
-Recent Repository Commits:
+Recent Repository Commits & Team Activity:
 ${commitText}
 
-Analyze task priorities, logical engineering dependencies (e.g. data models and setup before algorithms), and recent commit context.
-Select the single best task ID for the developer to work on right now.
+Analyze task priorities, logical engineering dependencies (e.g. data models and setup before algorithms), team capacity, and recent commit context.
+Select the single best task ID for the team to work on right now.
 
 Return a JSON object with these exact keys:
 - "suggestedTaskId": string (must match one of the task IDs above)
@@ -266,11 +268,13 @@ export async function analyzeProjectHealth(
     project: Project,
     tasks: Task[],
     repoConnected: boolean = false,
-    forceRefresh: boolean = false
+    forceRefresh: boolean = false,
+    collaboratorsCount: number = 1,
+    linkedGithubCount: number = 0
 ): Promise<AiProjectHealth> {
     const totalTasks = tasks.length;
     const completedTasks = tasks.filter((t) => t.status === "Completed").length;
-    const cacheKey = `ai_health_${project.id}_${totalTasks}_${completedTasks}`;
+    const cacheKey = `ai_health_${project.id}_${totalTasks}_${completedTasks}_collab_${collaboratorsCount}_gh_${linkedGithubCount}`;
 
     return cacheAiResponse(
         cacheKey,
@@ -299,16 +303,19 @@ Total Tasks: ${totalTasks}
 Completed Tasks: ${completedTasks}
 Tasks In Progress: ${inProgressCount}
 Uncompleted High-Priority Tasks: ${highPriorityCount}
+Active Team Collaborators: ${collaboratorsCount} member(s)
 GitHub Repository Connected: ${repoConnected ? "Yes" : "No"}
+Linked GitHub Issues & Pull Requests: ${linkedGithubCount}
 
 Task List:
 ${taskSummary}
 
 Evaluate the health of this project. Consider:
-1. Progress ratio vs total tasks
-2. Uncompleted high-priority task bottleneck
-3. Repository connectivity for engineering tracking
-4. Project activity balance
+1. Team capacity & active team collaborators (${collaboratorsCount} member(s))
+2. Progress ratio vs total tasks (${completedTasks}/${totalTasks})
+3. Uncompleted high-priority task bottleneck (${highPriorityCount} pending)
+4. GitHub issues, pull requests & repository activity tracking (${linkedGithubCount} linked)
+5. Project activity balance
 
 Return a JSON object with these exact keys:
 - "healthScore": number (integer from 0 to 100)
@@ -363,7 +370,7 @@ Return a JSON object with these exact keys:
                     return {
                         healthScore: Math.max(25, Math.min(100, score)),
                         status: status,
-                        summary: `${project.name} has ${completedTasks} of ${totalTasks} tasks completed (${score}% completion rate). (Local Heuristic Engine — API Quota Limit Exceeded)`,
+                        summary: `${project.name} has ${completedTasks} of ${totalTasks} tasks completed (${score}% completion rate) across ${collaboratorsCount} team member(s). (Local Heuristic Engine — API Quota Limit Exceeded)`,
                         keyRisks: [
                             highPriorityCount > 0 ? `${highPriorityCount} high-priority task(s) pending completion.` : "No critical high-priority bottlenecks.",
                             repoConnected ? "Repository linked." : "Connect a GitHub repository for commit tracking.",

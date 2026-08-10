@@ -10,12 +10,26 @@ export function useProjectHealth() {
     const [error, setError] = useState<string | null>(null);
 
     const analyze = useCallback(
-        async (project: Project, tasks: Task[], repoConnected: boolean = false, forceRefresh: boolean = false) => {
+        async (
+            project: Project,
+            tasks: Task[],
+            repoConnected: boolean = false,
+            forceRefresh: boolean = false,
+            collaboratorsCount: number = 1,
+            linkedGithubCount: number = 0
+        ) => {
             setLoading(true);
             setError(null);
 
             try {
-                const result = await analyzeProjectHealth(project, tasks, repoConnected, forceRefresh);
+                const result = await analyzeProjectHealth(
+                    project,
+                    tasks,
+                    repoConnected,
+                    forceRefresh,
+                    collaboratorsCount,
+                    linkedGithubCount
+                );
                 setHealth(result);
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Failed to analyze project health.");

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, Activity, AlertTriangle, ShieldCheck, RefreshCw } from "lucide-react";
 import { useProjectHealth } from "../../hooks/useProjectHealth";
+import { useProjectCollaborators } from "../../hooks/useProjectCollaborators";
 import type { Project } from "../../types/project";
 import type { Task } from "../../types/task";
 
@@ -40,11 +41,12 @@ function ProjectHealthModal({
     onClose,
 }: ProjectHealthModalProps) {
     const { health, loading, error, analyze } = useProjectHealth();
+    const { collaborators } = useProjectCollaborators(project.id);
 
     useEffect(() => {
         if (!open) return;
-        void analyze(project, tasks, repoConnected);
-    }, [open, project, tasks, repoConnected, analyze]);
+        void analyze(project, tasks, repoConnected, false, Math.max(1, collaborators.length + 1), 0);
+    }, [open, project, tasks, repoConnected, collaborators.length, analyze]);
 
     return createPortal(
         <AnimatePresence>
