@@ -3,33 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Bell, Sparkles, CheckCircle2, GitBranch, AlertTriangle, Check, Trash2, X, ChevronRight } from "lucide-react";
 import type { WorkspaceNotification } from "../types/notification";
-
-const initialNotifications: WorkspaceNotification[] = [
-    {
-        id: "notif-1",
-        title: "AI Breakdown Generated",
-        message: "Gemini AI generated 9 actionable tasks for Graph Visualizer.",
-        timestamp: "5m ago",
-        type: "ai",
-        read: false,
-    },
-    {
-        id: "notif-2",
-        title: "GitHub Repository Linked",
-        message: "Connected anujku-09/graph_visualizer to Graph Visualizer.",
-        timestamp: "25m ago",
-        type: "info",
-        read: false,
-    },
-    {
-        id: "notif-3",
-        title: "Project Health Diagnostic",
-        message: "AI Health Score evaluated at 85/100 (Healthy).",
-        timestamp: "1h ago",
-        type: "success",
-        read: false,
-    },
-];
+import { useAuth } from "../hooks/useAuth";
+import {
+    getStoredNotifications,
+    saveStoredNotifications,
+} from "../services/notificationService";
 
 const iconMap = {
     ai: <Sparkles size={15} className="text-ember shrink-0" />,
@@ -42,18 +20,31 @@ type FilterCategory = "all" | "ai" | "unread";
 
 function NotificationPopover() {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [open, setOpen] = useState(false);
     const [filterCategory, setFilterCategory] = useState<FilterCategory>("all");
-    const [notifications, setNotifications] = useState<WorkspaceNotification[]>(() => {
-        const saved = localStorage.getItem("devboard_notifications");
-        return saved ? JSON.parse(saved) : initialNotifications;
-    });
+    const [notifications, setNotifications] = useState<WorkspaceNotification[]>(() =>
+        getStoredNotifications(user?.id)
+    );
 
     const popoverRef = useRef<HTMLDivElement>(null);
 
+    // Switch notifications when user logs in, out, or changes accounts
     useEffect(() => {
-        localStorage.setItem("devboard_notifications", JSON.stringify(notifications));
-    }, [notifications]);
+        setNotifications(getStoredNotifications(user?.id));
+    }, [user?.id]);
+
+    // Listen for new notifications added by background actions
+    useEffect(() => {
+        function handleNotificationChange() {
+            setNotifications(getStoredNotifications(user?.id));
+        }
+
+        window.addEventListener("devboard:notification_change", handleNotificationChange);
+        return () => {
+            window.removeEventListener("devboard:notification_change", handleNotificationChange);
+        };
+    }, [user?.id]);
 
     // Close popover when clicking outside
     useEffect(() => {
@@ -81,21 +72,28 @@ function NotificationPopover() {
     });
 
     function markAllAsRead() {
-        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+        const updated = notifications.map((n) => ({ ...n, read: true }));
+        setNotifications(updated);
+        saveStoredNotifications(user?.id, updated);
     }
 
     function removeNotification(id: string) {
-        setNotifications((prev) => prev.filter((n) => n.id !== id));
+        const updated = notifications.filter((n) => n.id !== id);
+        setNotifications(updated);
+        saveStoredNotifications(user?.id, updated);
     }
 
     function clearAll() {
         setNotifications([]);
+        saveStoredNotifications(user?.id, []);
     }
 
     function handleItemClick(notif: WorkspaceNotification) {
-        setNotifications((prev) =>
-            prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n))
+        const updated = notifications.map((n) =>
+            n.id === notif.id ? { ...n, read: true } : n
         );
+        setNotifications(updated);
+        saveStoredNotifications(user?.id, updated);
         setOpen(false);
         if (notif.type === "ai") {
             navigate("/dashboard");

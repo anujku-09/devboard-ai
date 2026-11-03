@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X, Sparkles, RefreshCw } from "lucide-react";
 
 import { createTask } from "../../services/taskService";
+import { addWorkspaceNotification } from "../../services/notificationService";
 import { useProjectBreakdown } from "../../hooks/useProjectBreakdown";
 import { useAuth } from "../../hooks/useAuth";
 import type { Project } from "../../types/project";
@@ -75,6 +76,11 @@ function ProjectBreakdownModal({ open, project, onClose, onTasksCreated }: Proje
             );
 
             onTasksCreated(created);
+            addWorkspaceNotification(user.id, {
+                title: "AI Breakdown Added",
+                message: `Added ${created.length} Gemini AI tasks to ${project.name}.`,
+                type: "ai",
+            });
             onClose();
         } catch (err) {
             setCreateError(err instanceof Error ? err.message : "Failed to create tasks.");

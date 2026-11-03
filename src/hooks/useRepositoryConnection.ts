@@ -5,6 +5,7 @@ import {
   disconnectRepository,
   getRepositoryConnection,
 } from "../services/repositoryService";
+import { addWorkspaceNotification } from "../services/notificationService";
 import type { GithubRepo, RepositoryConnection } from "../types/github";
 
 export function useRepositoryConnection(projectId: string | undefined) {
@@ -44,11 +45,17 @@ export function useRepositoryConnection(projectId: string | undefined) {
       try {
         const newConnection = await connectRepository(projectId, repo);
         setConnection(newConnection);
-      } catch (err: any) {
+        addWorkspaceNotification(newConnection.userId, {
+          title: "GitHub Repository Linked",
+          message: `Connected ${repo.fullName} to repository hub.`,
+          type: "info",
+        });
+      } catch (err: unknown) {
         console.error("Failed to connect repository:", err);
 
+        const errorObj = err as { code?: string; message?: string };
         // Handle duplicate repo conflict (409)
-        if (err?.code === "409" || err?.message?.includes("duplicate key")) {
+        if (errorObj?.code === "409" || errorObj?.message?.includes("duplicate key")) {
           setError("This project already has a connected repository.");
         } else if (err instanceof Error) {
           setError(err.message);

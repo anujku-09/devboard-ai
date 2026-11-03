@@ -24,6 +24,7 @@ export async function signUp(
         password,
         options: {
             data: { username },
+            emailRedirectTo: `${window.location.origin}/dashboard`,
         },
     });
 

@@ -80,7 +80,7 @@ function ProjectHealthModal({
                             <div className="flex items-center gap-2 shrink-0">
                                 <button
                                     type="button"
-                                    onClick={() => void analyze(project, tasks, repoConnected, true)}
+                                    onClick={() => void analyze(project, tasks, repoConnected, true, Math.max(1, collaborators.length + 1), 0)}
                                     disabled={loading}
                                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-ember hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
                                     title="Bypass 30-min cache and fetch fresh AI analysis"
@@ -111,8 +111,17 @@ function ProjectHealthModal({
                                     <div className="h-16 rounded-xl bg-slate-200/60 dark:bg-white/5 animate-pulse" />
                                 </div>
                             ) : error ? (
-                                <div className="rounded-xl border border-danger/20 bg-danger/5 p-4 text-center">
-                                    <p className="text-xs sm:text-sm text-danger">{error}</p>
+                                <div className="rounded-xl border border-danger/20 bg-danger/5 p-4 text-center space-y-3">
+                                    <p className="text-xs sm:text-sm text-danger font-medium">{error}</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => void analyze(project, tasks, repoConnected, true, Math.max(1, collaborators.length + 1), 0)}
+                                        disabled={loading}
+                                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-ember text-ink text-xs font-semibold hover:bg-ember-dark transition-colors shadow-xs"
+                                    >
+                                        <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+                                        <span>Retry Analysis</span>
+                                    </button>
                                 </div>
                             ) : health ? (
                                 <>

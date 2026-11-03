@@ -35,7 +35,11 @@ function ForgotPassword() {
     } catch (error) {
       console.error(error);
       const message = error instanceof Error ? error.message : "Unable to send a password reset email.";
-      showToast(message, "error");
+      let friendlyMessage = message;
+      if (message.toLowerCase().includes("rate limit") || message.includes("over_email_send_rate_limit")) {
+        friendlyMessage = "Supabase email rate limit exceeded. Please wait a few minutes before requesting another reset email.";
+      }
+      showToast(friendlyMessage, "error");
     }
   }
 
@@ -59,14 +63,20 @@ function ForgotPassword() {
         </p>
 
         {emailSentTo ? (
-          <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300">
-            We sent a reset link to <span className="font-semibold">{emailSentTo}</span>. Check your inbox and follow the instructions.
+          <div className="mt-6 rounded-xl border border-signal/30 bg-signal/5 p-4 text-center">
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+              Check your inbox
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              We've emailed a password reset link to <span className="font-semibold">{emailSentTo}</span>.
+            </p>
           </div>
         ) : (
-          <form className="mt-6" onSubmit={handleSubmit(onSubmit)}>
+          <form className="mt-6 space-y-4" onSubmit={handleSubmit(onSubmit)}>
             <Input
-              label="Email"
+              label="Email Address"
               type="email"
+              placeholder="developer@workspace.com"
               error={errors.email?.message}
               {...register("email")}
             />
@@ -75,7 +85,7 @@ function ForgotPassword() {
               type="submit"
               disabled={isSubmitting}
               isLoading={isSubmitting}
-              loadingText="Sending..."
+              loadingText="Sending link..."
             >
               Send reset link
             </Button>

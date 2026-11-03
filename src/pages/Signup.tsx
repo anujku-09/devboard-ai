@@ -44,7 +44,13 @@ function Signup() {
     } catch (error) {
       console.error(error);
       const message = error instanceof Error ? error.message : "Unable to create your account right now.";
-      showToast(message.includes("already registered") ? "An account with this email already exists." : message, "error");
+      let friendlyMessage = message;
+      if (message.includes("already registered") || message.includes("User already registered")) {
+        friendlyMessage = "An account with this email already exists.";
+      } else if (message.toLowerCase().includes("rate limit") || message.includes("over_email_send_rate_limit")) {
+        friendlyMessage = "Supabase email rate limit exceeded (shared SMTP quota). Please wait a few minutes before trying again.";
+      }
+      showToast(friendlyMessage, "error");
     }
   }
 

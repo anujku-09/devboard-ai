@@ -16,7 +16,6 @@ export function useGithubConnection() {
 
     const refresh = useCallback(async () => {
         setLoading(true);
-        setError(null);
 
         try {
             const existing = await getGithubConnection();
@@ -28,6 +27,26 @@ export function useGithubConnection() {
         }
     }, []);
 
+    // Check URL parameters for OAuth errors (e.g. identity_already_exists)
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const errorCode = params.get("error_code");
+        const errorDesc = params.get("error_description");
+        const errorParam = params.get("error");
+
+        if (errorCode || errorParam) {
+            if (errorCode === "identity_already_exists") {
+                setError(
+                    "This GitHub account is already linked to another DevBoard AI user account. Please log into that account in Supabase to unlink it, or use a different GitHub account."
+                );
+            } else {
+                setError(errorDesc || errorParam || "Failed to link GitHub account.");
+            }
+            // Clean URL query string
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }, []);
+
     useEffect(() => {
         void refresh();
     }, [refresh]);
@@ -36,6 +55,7 @@ export function useGithubConnection() {
         const unwatch = watchForGithubProviderToken((newConnection) => {
             setConnection(newConnection);
             setConnecting(false);
+            setError(null);
         });
 
         return unwatch;

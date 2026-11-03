@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { analyzeProjectHealth } from "../services/aiService";
+import { addWorkspaceNotification } from "../services/notificationService";
 import type { AiProjectHealth } from "../types/ai";
 import type { Project } from "../types/project";
 import type { Task } from "../types/task";
@@ -31,6 +32,13 @@ export function useProjectHealth() {
                     linkedGithubCount
                 );
                 setHealth(result);
+                if (project.user_id) {
+                    addWorkspaceNotification(project.user_id, {
+                        title: "Project Health Diagnostic",
+                        message: `AI Health evaluated at ${result.healthScore}/100 (${result.status}) for ${project.name}.`,
+                        type: "success",
+                    });
+                }
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Failed to analyze project health.");
             } finally {

@@ -2,7 +2,8 @@ import type { AiProductivityInsight, AiProjectHealth, AiSuggestedTask, AiTaskSug
 import type { Project } from "../types/project";
 import type { Task } from "../types/task";
 
-const GEMINI_MODEL = "models/gemini-flash-latest";
+const PRIMARY_MODEL = "gemini-2.5-flash";
+const FALLBACK_MODEL = "gemini-1.5-flash";
 const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 Minutes Cache TTL
 
 interface CachedPayload<T> {
@@ -52,18 +53,127 @@ async function cacheAiResponse<T>(
     return freshData;
 }
 
-function isQuotaExceededError(err: unknown): boolean {
-    if (err instanceof Error) {
-        const msg = err.message.toLowerCase();
-        return (
-            msg.includes("quota exceeded") ||
-            msg.includes("rate-limits") ||
-            msg.includes("429") ||
-            msg.includes("free_tier_requests") ||
-            msg.includes("resource_exhausted")
+function sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableError(status: number, message: string): boolean {
+    const msg = message.toLowerCase();
+    return (
+        status === 429 ||
+        status === 500 ||
+        status === 503 ||
+        msg.includes("high demand") ||
+        msg.includes("resource_exhausted") ||
+        msg.includes("rate limit") ||
+        msg.includes("overloaded") ||
+        msg.includes("spikes in demand")
+    );
+}
+
+interface RequestError extends Error {
+    status?: number;
+}
+
+async function executeGeminiRequest(
+    model: string,
+    prompt: string,
+    apiKey: string
+): Promise<string> {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            contents: [
+                {
+                    parts: [{ text: prompt }],
+                },
+            ],
+            generationConfig: {
+                responseMimeType: "application/json",
+                temperature: 0.2,
+            },
+        }),
+    });
+
+    if (!response.ok) {
+        const errorJson = await response.json().catch(() => null);
+        const errorMsg =
+            errorJson?.error?.message ?? `API request failed with status ${response.status}`;
+        const error: RequestError = new Error(errorMsg);
+        error.status = response.status;
+        throw error;
+    }
+
+    const data = await response.json();
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!rawText) {
+        throw new Error("Gemini AI did not return any content.");
+    }
+
+    return rawText;
+}
+
+/**
+ * Resilient Gemini API invocation engine.
+ * Supports automatic retries with exponential backoff and transparent
+ * fallback between gemini-2.5-flash and gemini-1.5-flash.
+ */
+async function callGeminiWithRetry(prompt: string): Promise<string> {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+    if (!apiKey) {
+        throw new Error(
+            "Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env file."
         );
     }
-    return false;
+
+    const modelsToTry = [PRIMARY_MODEL, FALLBACK_MODEL];
+    let lastError: RequestError | null = null;
+
+    for (const model of modelsToTry) {
+        const maxRetries = 2; // 3 attempts per model
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                return await executeGeminiRequest(model, prompt, apiKey);
+            } catch (err: unknown) {
+                const requestError: RequestError =
+                    err instanceof Error ? err : new Error(String(err));
+                lastError = requestError;
+                const status = requestError.status ?? 0;
+                const message = requestError.message;
+
+                const retryable = isRetryableError(status, message);
+                if (!retryable || attempt === maxRetries) {
+                    console.warn(`[Gemini AI] Model ${model} attempt ${attempt + 1} failed: ${message}`);
+                    break; // Move to fallback model
+                }
+
+                // Exponential backoff: 1s, 2s
+                const backoffMs = 1000 * Math.pow(2, attempt);
+                console.log(`[Gemini AI] ${message}. Retrying ${model} in ${backoffMs}ms...`);
+                await sleep(backoffMs);
+            }
+        }
+    }
+
+    const errorMsg = lastError?.message || "Unknown error";
+    if (
+        errorMsg.toLowerCase().includes("high demand") ||
+        errorMsg.includes("503") ||
+        errorMsg.includes("429")
+    ) {
+        throw new Error(
+            "Gemini AI is currently experiencing high demand. Please click Refresh to try again."
+        );
+    }
+
+    throw new Error(`Gemini AI Error: ${errorMsg}`);
 }
 
 export async function generateProjectBreakdown(
@@ -76,14 +186,6 @@ export async function generateProjectBreakdown(
     return cacheAiResponse(
         cacheKey,
         async () => {
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-            if (!apiKey) {
-                throw new Error(
-                    "Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env file."
-                );
-            }
-
             const prompt = `You are a senior engineering lead breaking a software project into an actionable task list.
 
 Project Name: ${projectName}
@@ -96,56 +198,9 @@ Return a JSON array where each object has these exact properties:
 - "description": string (clear summary of work)
 - "priority": "Low" | "Medium" | "High"`;
 
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
-            try {
-                const response = await fetch(endpoint, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        contents: [
-                            {
-                                parts: [{ text: prompt }],
-                            },
-                        ],
-                        generationConfig: {
-                            responseMimeType: "application/json",
-                            temperature: 0.2,
-                        },
-                    }),
-                });
-
-                if (!response.ok) {
-                    const errorJson = await response.json().catch(() => null);
-                    const errorMsg =
-                        errorJson?.error?.message ?? `API request failed with status ${response.status}`;
-                    throw new Error(`Gemini AI Error (${GEMINI_MODEL}): ${errorMsg}`);
-                }
-
-                const data = await response.json();
-                const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-                if (!rawText) {
-                    throw new Error("Gemini AI did not return any content.");
-                }
-
-                const tasks: AiSuggestedTask[] = JSON.parse(rawText);
-                return tasks;
-            } catch (err) {
-                if (isQuotaExceededError(err)) {
-                    console.warn("Gemini API quota exceeded. Returning local heuristic breakdown.");
-                    return [
-                        { title: `Set up core architecture for ${projectName}`, description: "Initial project boilerplate, routing, and environment configurations.", priority: "High" },
-                        { title: "Define data models and database schemas", description: "Establish database tables, relationships, and TypeScript interfaces.", priority: "High" },
-                        { title: "Implement core UI components and layouts", description: "Build main application views, forms, and responsive components.", priority: "Medium" },
-                        { title: "Connect API endpoints & authentication", description: "Wire up backend services, Auth tokens, and error handling.", priority: "Medium" },
-                        { title: "Write unit tests and verify build pipeline", description: "Perform integration testing and verify production deployment.", priority: "Low" },
-                    ];
-                }
-                throw err;
-            }
+            const rawText = await callGeminiWithRetry(prompt);
+            const tasks: AiSuggestedTask[] = JSON.parse(rawText);
+            return tasks;
         },
         forceRefresh
     );
@@ -169,14 +224,6 @@ export async function suggestNextTask(
     return cacheAiResponse(
         cacheKey,
         async () => {
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-            if (!apiKey) {
-                throw new Error(
-                    "Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env file."
-                );
-            }
-
             const taskListText = uncompleted
                 .map((t) => `- [ID: ${t.id}] ${t.title} (Priority: ${t.priority}, Status: ${t.status}): ${t.description}`)
                 .join("\n");
@@ -205,60 +252,9 @@ Return a JSON object with these exact keys:
 - "reasoning": string (2-3 sentences explaining why this task is the priority now)
 - "recommendedNextSteps": string[] (array of 2 to 4 concrete action steps to execute this task)`;
 
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
-            try {
-                const response = await fetch(endpoint, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        contents: [
-                            {
-                                parts: [{ text: prompt }],
-                            },
-                        ],
-                        generationConfig: {
-                            responseMimeType: "application/json",
-                            temperature: 0.2,
-                        },
-                    }),
-                });
-
-                if (!response.ok) {
-                    const errorJson = await response.json().catch(() => null);
-                    const errorMsg =
-                        errorJson?.error?.message ?? `API request failed with status ${response.status}`;
-                    throw new Error(`Gemini AI Error: ${errorMsg}`);
-                }
-
-                const data = await response.json();
-                const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-                if (!rawText) {
-                    throw new Error("Gemini AI did not return any suggestion.");
-                }
-
-                const suggestion: AiTaskSuggestion = JSON.parse(rawText);
-                return suggestion;
-            } catch (err) {
-                if (isQuotaExceededError(err)) {
-                    console.warn("Gemini API quota exceeded. Returning local heuristic task suggestion.");
-                    const topTask = uncompleted.find((t) => t.priority === "High") || uncompleted[0];
-                    return {
-                        suggestedTaskId: topTask.id,
-                        suggestedTaskTitle: topTask.title,
-                        reasoning: `Selected based on high priority status and uncompleted backlog ranking. (Local Heuristic Engine — API Quota Limit Exceeded)`,
-                        recommendedNextSteps: [
-                            "Review task requirements and open dependencies.",
-                            "Execute core implementation steps.",
-                            "Move task status to 'In Progress' on Kanban board.",
-                        ],
-                    };
-                }
-                throw err;
-            }
+            const rawText = await callGeminiWithRetry(prompt);
+            const suggestion: AiTaskSuggestion = JSON.parse(rawText);
+            return suggestion;
         },
         forceRefresh
     );
@@ -279,14 +275,6 @@ export async function analyzeProjectHealth(
     return cacheAiResponse(
         cacheKey,
         async () => {
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-            if (!apiKey) {
-                throw new Error(
-                    "Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env file."
-                );
-            }
-
             const highPriorityCount = tasks.filter((t) => t.priority === "High" && t.status !== "Completed").length;
             const inProgressCount = tasks.filter((t) => t.status === "In Progress").length;
 
@@ -324,65 +312,9 @@ Return a JSON object with these exact keys:
 - "keyRisks": string[] (array of 2 to 4 potential risk factors or bottlenecks)
 - "recommendations": string[] (array of 2 to 4 actionable recommendations for the engineering team)`;
 
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
-            try {
-                const response = await fetch(endpoint, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        contents: [
-                            {
-                                parts: [{ text: prompt }],
-                            },
-                        ],
-                        generationConfig: {
-                            responseMimeType: "application/json",
-                            temperature: 0.2,
-                        },
-                    }),
-                });
-
-                if (!response.ok) {
-                    const errorJson = await response.json().catch(() => null);
-                    const errorMsg =
-                        errorJson?.error?.message ?? `API request failed with status ${response.status}`;
-                    throw new Error(`Gemini AI Error: ${errorMsg}`);
-                }
-
-                const data = await response.json();
-                const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-                if (!rawText) {
-                    throw new Error("Gemini AI did not return any health analysis.");
-                }
-
-                const health: AiProjectHealth = JSON.parse(rawText);
-                return health;
-            } catch (err) {
-                if (isQuotaExceededError(err)) {
-                    console.warn("Gemini API quota exceeded. Returning local heuristic health diagnostic.");
-                    const score = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : project.progress;
-                    const status = score >= 70 ? "Healthy" : score >= 35 ? "Needs Attention" : "At Risk";
-
-                    return {
-                        healthScore: Math.max(25, Math.min(100, score)),
-                        status: status,
-                        summary: `${project.name} has ${completedTasks} of ${totalTasks} tasks completed (${score}% completion rate) across ${collaboratorsCount} team member(s). (Local Heuristic Engine — API Quota Limit Exceeded)`,
-                        keyRisks: [
-                            highPriorityCount > 0 ? `${highPriorityCount} high-priority task(s) pending completion.` : "No critical high-priority bottlenecks.",
-                            repoConnected ? "Repository linked." : "Connect a GitHub repository for commit tracking.",
-                        ],
-                        recommendations: [
-                            "Prioritize high-priority Todo items.",
-                            "Gemini API rate limit reached (15 req/min). Try refreshing in 30 seconds.",
-                        ],
-                    };
-                }
-                throw err;
-            }
+            const rawText = await callGeminiWithRetry(prompt);
+            const health: AiProjectHealth = JSON.parse(rawText);
+            return health;
         },
         forceRefresh
     );
@@ -400,14 +332,6 @@ export async function generateProductivityInsights(
     return cacheAiResponse(
         cacheKey,
         async () => {
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-            if (!apiKey) {
-                throw new Error(
-                    "Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env file."
-                );
-            }
-
             const totalProjects = projects.length;
             const totalTasks = tasks.length;
             const completedTasks = tasks.filter((t) => t.status === "Completed");
@@ -440,67 +364,9 @@ Return a JSON object with these exact keys:
 - "keyAchievements": string[] (array of 2 to 3 bullet points highlighting recent wins or progress)
 - "optimizationTips": string[] (array of 2 to 3 actionable tips to improve throughput and focus)`;
 
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
-            try {
-                const response = await fetch(endpoint, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        contents: [
-                            {
-                                parts: [{ text: prompt }],
-                            },
-                        ],
-                        generationConfig: {
-                            responseMimeType: "application/json",
-                            temperature: 0.2,
-                        },
-                    }),
-                });
-
-                if (!response.ok) {
-                    const errorJson = await response.json().catch(() => null);
-                    const errorMsg =
-                        errorJson?.error?.message ?? `API request failed with status ${response.status}`;
-                    throw new Error(`Gemini AI Error: ${errorMsg}`);
-                }
-
-                const data = await response.json();
-                const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-                if (!rawText) {
-                    throw new Error("Gemini AI did not return any productivity insights.");
-                }
-
-                const insight: AiProductivityInsight = JSON.parse(rawText);
-                return insight;
-            } catch (err) {
-                if (isQuotaExceededError(err)) {
-                    console.warn("Gemini API quota exceeded. Returning local heuristic productivity insight.");
-                    const ratio = totalTasks > 0 ? completedTasks.length / totalTasks : 0;
-                    let velocity: "Accelerating" | "Steady" | "Blocked" | "Starting Out" = "Starting Out";
-                    if (ratio >= 0.5) velocity = "Accelerating";
-                    else if (ratio >= 0.2) velocity = "Steady";
-                    else if (totalTasks > 5 && ratio < 0.1) velocity = "Blocked";
-
-                    return {
-                        velocityLevel: velocity,
-                        summary: `Workspace has ${totalProjects} active project(s) and ${totalTasks} task(s) with ${completedTasks.length} completed (${Math.round(ratio * 100)}% completion rate). (Local Heuristic Engine — API Quota Limit Exceeded)`,
-                        keyAchievements: [
-                            `Completed ${completedTasks.length} workspace task(s) across active projects.`,
-                            githubUsername ? `Synced GitHub commits for @${githubUsername}.` : "Workspace repository integrations active.",
-                        ],
-                        optimizationTips: [
-                            "Focus on moving high-priority 'In Progress' tasks to 'Completed'.",
-                            "Gemini API rate limit reached (15 req/min). Try refreshing insights in 30 seconds.",
-                        ],
-                    };
-                }
-                throw err;
-            }
+            const rawText = await callGeminiWithRetry(prompt);
+            const insight: AiProductivityInsight = JSON.parse(rawText);
+            return insight;
         },
         forceRefresh
     );
