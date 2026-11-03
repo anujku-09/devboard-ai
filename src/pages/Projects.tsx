@@ -5,6 +5,8 @@ import ProjectList from "../components/projects/ProjectList";
 import ProjectModal from "../components/projects/ProjectModal";
 import { useProjects } from "../hooks/useProjects";
 import { useToast } from "../hooks/useToast";
+import { connectRepository } from "../services/repositoryService";
+import type { GithubRepo } from "../types/github";
 import type { ProjectFormData } from "../schemas/projectSchema";
 import type { Project } from "../types/project";
 
@@ -90,14 +92,24 @@ function Projects() {
         setEditingProject(null);
     }
 
-    async function handleSubmit(data: ProjectFormData) {
+    async function handleSubmit(data: ProjectFormData, repoToConnect?: GithubRepo | null) {
         try {
             if (editingProject) {
                 await updateProject(editingProject.id, data);
                 showToast("Project updated successfully", "success");
             } else {
-                await createProject(data);
-                showToast("Project created successfully", "success");
+                const newProject = await createProject(data);
+                if (repoToConnect && newProject?.id) {
+                    try {
+                        await connectRepository(newProject.id, repoToConnect);
+                        showToast(`Project "${data.name}" created & linked to ${repoToConnect.name}!`, "success");
+                    } catch (repoErr) {
+                        console.warn("Failed to auto-connect repo:", repoErr);
+                        showToast("Project created, but repository linking failed.", "error");
+                    }
+                } else {
+                    showToast("Project created successfully", "success");
+                }
             }
 
             closeModal();

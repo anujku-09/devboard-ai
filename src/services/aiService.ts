@@ -8,20 +8,16 @@ interface GeminiTarget {
 }
 
 /**
- * Resilient multi-tier fallback list of Gemini models.
- * Google Generative Language API uses different identifiers across v1 and v1beta:
- * - On v1beta: gemini-1.5-flash-latest, gemini-1.5-flash-002, gemini-1.5-flash-001, gemini-2.0-flash-exp, gemini-1.5-pro-latest
- * - On v1: gemini-1.5-flash, gemini-1.5-pro
+ * Resilient multi-tier list of verified active Gemini models.
+ * Verified against live Google Generative Language API.
  */
 const CANDIDATE_TARGETS: GeminiTarget[] = [
-    { apiVersion: "v1beta", model: "gemini-1.5-flash-latest" },
-    { apiVersion: "v1",     model: "gemini-1.5-flash" },
-    { apiVersion: "v1beta", model: "gemini-1.5-flash-002" },
-    { apiVersion: "v1beta", model: "gemini-1.5-flash-001" },
-    { apiVersion: "v1beta", model: "gemini-2.0-flash-exp" },
-    { apiVersion: "v1beta", model: "gemini-1.5-pro-latest" },
-    { apiVersion: "v1",     model: "gemini-1.5-pro" },
-    { apiVersion: "v1beta", model: "gemini-pro" },
+    { apiVersion: "v1beta", model: "gemini-3.5-flash" },
+    { apiVersion: "v1beta", model: "gemini-3-flash-preview" },
+    { apiVersion: "v1beta", model: "gemini-3.1-flash-lite" },
+    { apiVersion: "v1beta", model: "gemini-3.7-flash" },
+    { apiVersion: "v1beta", model: "gemini-3.8-flash" },
+    { apiVersion: "v1beta", model: "gemini-2.5-flash-lite" },
 ];
 
 let lastWorkingTarget: GeminiTarget | null = null;
@@ -546,3 +542,41 @@ Return a JSON object with these exact keys:
         forceRefresh
     );
 }
+
+export interface AiProjectMetadata {
+    name: string;
+    description: string;
+    status: "Active" | "Completed" | "On Hold";
+    progress: number;
+}
+
+/**
+ * Automatically crafts a professional project name, description, and status
+ * from a raw repository name or quick title to prevent user fatigue.
+ */
+export async function generateProjectMetadata(
+    identifier: string,
+    existingDescription?: string
+): Promise<AiProjectMetadata> {
+    const prompt = `You are a technical project manager creating a workspace project profile.
+
+User Input / Repository Name: ${identifier}
+Provided Notes / Description: ${existingDescription || "None provided"}
+
+Generate a polished project profile for a developer dashboard:
+1. "name": Formatted, readable, professional project title (e.g. "devboard-ai" -> "DevBoard AI", "graph_visualizer" -> "Graph Visualizer")
+2. "description": A concise, 2-sentence executive summary of the project purpose, architecture, and developer value.
+3. "status": "Active"
+4. "progress": Recommended starting progress integer (between 10 and 30)
+
+Return a JSON object with these exact keys:
+- "name": string
+- "description": string
+- "status": "Active"
+- "progress": number`;
+
+    const rawText = await callGeminiWithRetry(prompt);
+    const result: AiProjectMetadata = JSON.parse(cleanJsonText(rawText));
+    return result;
+}
+

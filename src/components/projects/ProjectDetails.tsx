@@ -37,7 +37,7 @@ function ProjectTaskRow({ task }: { task: Task }) {
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3 min-w-0">
         <div className="flex items-center justify-between gap-2 min-w-0 flex-1">
-          <p className="font-semibold text-slate-800 dark:text-slate-100 text-xs sm:text-sm leading-snug break-words">
+          <p className="font-semibold text-slate-800 dark:text-slate-100 text-xs sm:text-sm leading-snug wrap-break-words">
             {task.title}
           </p>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 sm:hidden ${taskStatusPills[task.status]}`}>
@@ -70,7 +70,7 @@ function ProjectTaskRow({ task }: { task: Task }) {
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2 }}
-            className="pt-2 border-t border-slate-200/60 dark:border-white/10 text-xs text-slate-500 dark:text-slate-400 leading-relaxed break-words space-y-1"
+            className="pt-2 border-t border-slate-200/60 dark:border-white/10 text-xs text-slate-500 dark:text-slate-400 leading-relaxed wrap-break-words space-y-1"
           >
             <p>{task.description}</p>
             {task.dueDate && (
@@ -207,7 +207,7 @@ function ProjectDetails() {
             <span>Projects</span>
           </Link>
 
-          <h1 className="font-display text-lg sm:text-2xl font-bold text-slate-900 dark:text-white leading-tight break-words flex-1 min-w-0">
+          <h1 className="font-display text-lg sm:text-2xl font-bold text-slate-900 dark:text-white leading-tight wrap-break-words flex-1 min-w-0">
             {project.name}
           </h1>
 
@@ -217,7 +217,7 @@ function ProjectDetails() {
         </div>
 
         {project.description && (
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed break-words">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed wrap-break-words">
             {project.description}
           </p>
         )}

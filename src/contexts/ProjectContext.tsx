@@ -12,7 +12,7 @@ interface ProjectContextType {
   projects: Project[];
   loading: boolean;
   error: string | null;
-  createProject: (project: ProjectInput) => Promise<void>;
+  createProject: (project: ProjectInput) => Promise<Project>;
   updateProject: (id: string, updates: ProjectInput) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   refreshProjects: () => Promise<void>;
@@ -52,10 +52,11 @@ function ProjectProvider({ children }: { children: React.ReactNode }) {
     void refreshProjects();
   }, [refreshProjects]);
 
-  const createProject = useCallback(async (project: ProjectInput) => {
+  const createProject = useCallback(async (project: ProjectInput): Promise<Project> => {
     const newProject = await createProjectService(project);
     setProjects((prev) => [newProject, ...prev]);
     await refreshProjects();
+    return newProject;
   }, [refreshProjects]);
 
   const updateProject = useCallback(async (id: string, updates: ProjectInput) => {

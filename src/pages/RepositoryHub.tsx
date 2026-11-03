@@ -1,22 +1,54 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { GitBranch, ExternalLink, ArrowRight, GitCommit, GitPullRequest, Link2, ShieldCheck, RefreshCw, Unlink } from "lucide-react";
+import {
+    GitBranch,
+    ExternalLink,
+    ArrowRight,
+    GitCommit,
+    GitPullRequest,
+    Link2,
+    ShieldCheck,
+    RefreshCw,
+    Unlink,
+    Plus,
+    Loader2,
+    Lock,
+    Globe,
+} from "lucide-react";
 import { useProjects } from "../hooks/useProjects";
 import { useGithubConnection } from "../hooks/useGithubConnection";
+import { useToast } from "../hooks/useToast";
+import { useAuth } from "../hooks/useAuth";
 import RepositoryPickerModal from "../components/projects/RepositoryPickerModal";
 import { getAllRepositoryConnections, connectRepository, disconnectRepository } from "../services/repositoryService";
+import { listUserRepositories } from "../services/githubApiService";
+import { addWorkspaceNotification } from "../services/notificationService";
 import type { GithubRepo, RepositoryConnection } from "../types/github";
 import type { Project } from "../types/project";
 
+function formatRepoTitle(raw: string): string {
+    return raw
+        .replace(/[-_]/g, " ")
+        .replace(/\b\w/g, (char) => char.toUpperCase())
+        .trim();
+}
+
 function RepositoryHub() {
-    const { projects, loading: projectsLoading, refreshProjects } = useProjects();
+    const { user } = useAuth();
+    const { projects, loading: projectsLoading, refreshProjects, createProject } = useProjects();
     const { connection: githubConnection } = useGithubConnection();
+    const { showToast } = useToast();
 
     const [connections, setConnections] = useState<RepositoryConnection[]>([]);
     const [connectionsLoading, setConnectionsLoading] = useState(true);
 
-    // Modal state for linking a repo to a project
+    // GitHub User Repositories for 1-Click Import
+    const [githubRepos, setGithubRepos] = useState<GithubRepo[]>([]);
+    const [reposLoading, setReposLoading] = useState(false);
+    const [importingRepoId, setImportingRepoId] = useState<number | null>(null);
+
+    // Modal state for linking a repo to an existing project
     const [pickerTargetProject, setPickerTargetProject] = useState<Project | null>(null);
 
     const loadConnections = useCallback(async () => {
@@ -31,9 +63,28 @@ function RepositoryHub() {
         }
     }, []);
 
+    const loadGithubRepos = useCallback(async () => {
+        if (!githubConnection) {
+            setGithubRepos([]);
+            return;
+        }
+
+        setReposLoading(true);
+        try {
+            const data = await listUserRepositories();
+            setGithubRepos(data);
+        } catch (err) {
+            console.warn("Could not fetch user GitHub repos:", err);
+            setGithubRepos([]);
+        } finally {
+            setReposLoading(false);
+        }
+    }, [githubConnection]);
+
     useEffect(() => {
         void loadConnections();
-    }, [loadConnections]);
+        void loadGithubRepos();
+    }, [loadConnections, loadGithubRepos]);
 
     async function handleSelectRepo(repo: GithubRepo) {
         if (!pickerTargetProject) return;
@@ -52,9 +103,52 @@ function RepositoryHub() {
     async function handleSync() {
         await refreshProjects();
         await loadConnections();
+        await loadGithubRepos();
+    }
+
+    // 1-Click Zero-Fatigue Import from GitHub
+    async function handleImportRepo(repo: GithubRepo) {
+        setImportingRepoId(repo.id);
+        try {
+            const formattedName = formatRepoTitle(repo.name);
+            const newProject = await createProject({
+                name: formattedName,
+                description: repo.description || `Developer project repository for ${repo.name}.`,
+                status: "Active",
+                progress: 10,
+            });
+
+            if (newProject?.id) {
+                await connectRepository(newProject.id, repo);
+            }
+
+            if (user?.id) {
+                addWorkspaceNotification(user.id, {
+                    title: "GitHub Repository Imported",
+                    message: `Created project "${formattedName}" and linked with ${repo.fullName}.`,
+                    type: "success",
+                });
+            }
+
+            showToast(`Imported "${formattedName}" as an active project!`, "success");
+            await loadConnections();
+            await refreshProjects();
+        } catch (err) {
+            console.error("Failed to 1-click import repo:", err);
+            showToast(err instanceof Error ? err.message : "Failed to import project.", "error");
+        } finally {
+            setImportingRepoId(null);
+        }
     }
 
     const connectedProjectIds = new Set(connections.map((c) => c.projectId));
+    const connectedRepoFullNames = new Set(connections.map((c) => c.fullName.toLowerCase()));
+
+    // Available unimported GitHub repositories
+    const unimportedRepos = useMemo(() => {
+        return githubRepos.filter((r) => !connectedRepoFullNames.has(r.fullName.toLowerCase()));
+    }, [githubRepos, connectedRepoFullNames]);
+
     const isLoading = projectsLoading || connectionsLoading;
 
     return (
@@ -62,7 +156,7 @@ function RepositoryHub() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
-            className="space-y-4 sm:space-y-6 max-w-full overflow-hidden"
+            className="space-y-6 max-w-full overflow-hidden"
         >
             {/* Action Header */}
             <div className="flex items-center justify-between gap-4">
@@ -102,10 +196,10 @@ function RepositoryHub() {
                     </div>
                     <div>
                         <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                            GitHub Account
+                            Integration Auth
                         </p>
-                        <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white mt-0.5 truncate max-w-[170px]">
-                            {githubConnection?.githubUsername ? `@${githubConnection.githubUsername}` : "Not Connected"}
+                        <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white mt-0.5 truncate">
+                            {githubConnection ? `@${githubConnection.githubUsername}` : "Not Connected"}
                         </p>
                     </div>
                 </div>
@@ -119,17 +213,82 @@ function RepositoryHub() {
                             Code Intelligence
                         </p>
                         <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white mt-0.5">
-                            Gemini 1.5 Active
+                            Gemini 3.5 Active
                         </p>
                     </div>
                 </div>
             </div>
 
+            {/* Zero-Fatigue 1-Click Import Section */}
+            {githubConnection && unimportedRepos.length > 0 && (
+                <div className="rounded-2xl border border-ember/30 bg-ember/5 p-4 sm:p-5 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                <Plus size={16} className="text-ember" />
+                                <span>Quick Import from GitHub ({reposLoading ? "scanning..." : `${unimportedRepos.length} available`})</span>
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                Avoid manual typing. Click import to create a project and link the repository automatically.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                        {unimportedRepos.slice(0, 6).map((repo) => (
+                            <div
+                                key={repo.id}
+                                className="p-3.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-surface-dark flex flex-col justify-between gap-3 shadow-xs"
+                            >
+                                <div className="space-y-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate">
+                                            {repo.name}
+                                        </p>
+                                        {repo.private ? (
+                                            <span className="p-1 rounded bg-slate-100 dark:bg-white/5 text-slate-400" title="Private Repository">
+                                                <Lock size={11} />
+                                            </span>
+                                        ) : (
+                                            <span className="p-1 rounded bg-slate-100 dark:bg-white/5 text-slate-400" title="Public Repository">
+                                                <Globe size={11} />
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">
+                                        {repo.description || "No description on GitHub."}
+                                    </p>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => void handleImportRepo(repo)}
+                                    disabled={importingRepoId === repo.id}
+                                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-ember text-ink text-xs font-semibold hover:bg-ember-dark transition-colors disabled:opacity-50"
+                                >
+                                    {importingRepoId === repo.id ? (
+                                        <>
+                                            <Loader2 size={12} className="animate-spin" />
+                                            <span>Importing...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Plus size={12} />
+                                            <span>1-Click Import</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Repositories Catalog Section */}
             <div className="space-y-3">
                 <div className="flex items-center justify-between px-1">
                     <h2 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white">
-                        Workspace Repositories
+                        Connected Workspace Projects
                     </h2>
                     <span className="text-xs text-slate-400 hidden sm:inline">
                         Select a repository to view live commits & pull requests

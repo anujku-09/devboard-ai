@@ -127,7 +127,7 @@ function NotificationPopover() {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
                         transition={{ duration: 0.15, ease: "easeOut" }}
-                        className="absolute right-[-60px] sm:right-0 mt-2 w-[calc(100vw-28px)] max-w-[360px] sm:w-96 rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-surface-dark shadow-2xl z-50 overflow-hidden flex flex-col max-h-[85vh]"
+                        className="absolute right-60px sm:right-0 mt-2 w-[calc(100vw-28px)] max-w-360px sm:w-96 rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-surface-dark shadow-2xl z-50 overflow-hidden flex flex-col max-h-[85vh]"
                     >
                         {/* Popover Header */}
                         <div className="p-3.5 border-b border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-surface-dark-raised/50 space-y-2.5">
