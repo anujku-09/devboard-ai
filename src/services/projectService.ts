@@ -191,6 +191,44 @@ export async function updateProjectProgress(id: string, progress: number): Promi
         .eq("id", id);
 }
 
+/**
+ * Automatically recalculates and synchronizes project progress based on
+ * completed tasks. Invalidates stale health diagnostics so the score
+ * reflects reality.
+ */
+export async function reconcileProjectProgress(id: string): Promise<number> {
+    const {
+        data: { user },
+        error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) return 0;
+
+    const { data: tasks, error: tasksError } = await supabase
+        .from("tasks")
+        .select("status")
+        .eq("project_id", id);
+
+    if (tasksError || !tasks) return 0;
+
+    const total = tasks.length;
+    const completed = tasks.filter((t) => t.status === "Completed").length;
+    const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    await supabase
+        .from("projects")
+        .update({ progress })
+        .eq("id", id);
+
+    try {
+        localStorage.removeItem(`health_${id}`);
+    } catch {
+        // ignore localStorage errors
+    }
+
+    return progress;
+}
+
 export async function deleteProject(id: string): Promise<void> {
     const {
         data: { user },

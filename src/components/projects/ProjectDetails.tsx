@@ -9,7 +9,7 @@ import ProjectBreakdownModal from "./ProjectBreakdownModal";
 import AiTaskSuggestionModal from "./AiTaskSuggestionModal";
 import ProjectHealthModal from "./ProjectHealthModal";
 import CollaboratorAvatarStack from "./CollaboratorAvatarStack";
-import { getProjectById } from "../../services/projectService";
+import { getProjectById, updateProjectProgress } from "../../services/projectService";
 import { getTasks } from "../../services/taskService";
 import { useRepositoryConnection } from "../../hooks/useRepositoryConnection";
 import type { Project } from "../../types/project";
@@ -123,8 +123,25 @@ function ProjectDetails() {
           getTasks(),
         ]);
 
+        const projectTasks = allTasks.filter((task) => task.projectId === projectId);
+        const completed = projectTasks.filter((task) => task.status === "Completed").length;
+        const realProgress = projectTasks.length > 0
+          ? Math.round((completed / projectTasks.length) * 100)
+          : projectData.progress;
+
+        // Auto-reconcile project progress in database if out of sync with tasks
+        if (projectTasks.length > 0 && projectData.progress !== realProgress) {
+          void updateProjectProgress(projectId, realProgress);
+          projectData.progress = realProgress;
+          try {
+            localStorage.removeItem(`health_${projectId}`);
+          } catch {
+            // ignore
+          }
+        }
+
         setProject(projectData);
-        setTasks(allTasks.filter((task) => task.projectId === projectId));
+        setTasks(projectTasks);
       } catch (err) {
         console.error(err);
         setError(err instanceof Error ? err.message : "Unable to load project details.");
@@ -489,7 +506,23 @@ function ProjectDetails() {
         open={breakdownOpen}
         project={project}
         onClose={() => setBreakdownOpen(false)}
-        onTasksCreated={(newTasks) => setTasks((prev) => [...prev, ...newTasks])}
+        onTasksCreated={(newTasks) => {
+          setTasks((prev) => {
+            const next = [...prev, ...newTasks];
+            const completed = next.filter((t) => t.status === "Completed").length;
+            const newProg = Math.round((completed / next.length) * 100);
+            if (project) {
+              void updateProjectProgress(project.id, newProg);
+              setProject({ ...project, progress: newProg });
+              try {
+                localStorage.removeItem(`health_${project.id}`);
+              } catch {
+                // ignore
+              }
+            }
+            return next;
+          });
+        }}
       />
 
       <AiTaskSuggestionModal
@@ -498,9 +531,57 @@ function ProjectDetails() {
         tasks={tasks}
         repoConnection={repoConnection}
         onClose={() => setSuggestionOpen(false)}
-        onTaskUpdated={(updated) => setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))}
-        onTaskCreated={(newTask) => setTasks((prev) => [newTask, ...prev])}
-        onTasksCreated={(newTasks) => setTasks((prev) => [...newTasks, ...prev])}
+        onTaskUpdated={(updated) => {
+          setTasks((prev) => {
+            const next = prev.map((t) => (t.id === updated.id ? updated : t));
+            const completed = next.filter((t) => t.status === "Completed").length;
+            const newProg = Math.round((completed / next.length) * 100);
+            if (project) {
+              void updateProjectProgress(project.id, newProg);
+              setProject({ ...project, progress: newProg });
+              try {
+                localStorage.removeItem(`health_${project.id}`);
+              } catch {
+                // ignore
+              }
+            }
+            return next;
+          });
+        }}
+        onTaskCreated={(newTask) => {
+          setTasks((prev) => {
+            const next = [newTask, ...prev];
+            const completed = next.filter((t) => t.status === "Completed").length;
+            const newProg = Math.round((completed / next.length) * 100);
+            if (project) {
+              void updateProjectProgress(project.id, newProg);
+              setProject({ ...project, progress: newProg });
+              try {
+                localStorage.removeItem(`health_${project.id}`);
+              } catch {
+                // ignore
+              }
+            }
+            return next;
+          });
+        }}
+        onTasksCreated={(newTasks) => {
+          setTasks((prev) => {
+            const next = [...newTasks, ...prev];
+            const completed = next.filter((t) => t.status === "Completed").length;
+            const newProg = Math.round((completed / next.length) * 100);
+            if (project) {
+              void updateProjectProgress(project.id, newProg);
+              setProject({ ...project, progress: newProg });
+              try {
+                localStorage.removeItem(`health_${project.id}`);
+              } catch {
+                // ignore
+              }
+            }
+            return next;
+          });
+        }}
       />
 
       <ProjectHealthModal

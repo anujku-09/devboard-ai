@@ -516,6 +516,11 @@ export async function analyzeProjectHealth(
 ): Promise<AiProjectHealth> {
     const totalTasks = tasks.length;
     const completedTasks = tasks.filter((t) => t.status === "Completed").length;
+    // Reconciled effective progress: strictly calculated from tasks if tasks exist
+    const effectiveProgress = totalTasks > 0
+        ? Math.round((completedTasks / totalTasks) * 100)
+        : project.progress;
+
     const cacheKey = `health_${project.id}`;
 
     return cacheAiResponse(
@@ -532,7 +537,7 @@ export async function analyzeProjectHealth(
 
 Project Name: ${project.name}
 Project Status: ${project.status}
-Reported Progress: ${project.progress}%
+Calculated Progress: ${effectiveProgress}% (${completedTasks} of ${totalTasks} tasks completed)
 Total Tasks: ${totalTasks}
 Completed Tasks: ${completedTasks}
 Tasks In Progress: ${inProgressCount}
@@ -545,6 +550,7 @@ Task Snapshot:
 ${taskSummary}
 
 Evaluate project health concisely.
+Note: Completion progress is strictly verified at ${effectiveProgress}% based on actual task deliverables. Evaluate development velocity, risk management, and roadmap health based on the real task snapshot and repository integration.
 
 Return a JSON object with these exact keys:
 - "healthScore": number (integer from 0 to 100)

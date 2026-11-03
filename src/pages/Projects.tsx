@@ -4,7 +4,9 @@ import { Search, RefreshCw, Plus } from "lucide-react";
 import ProjectList from "../components/projects/ProjectList";
 import ProjectModal from "../components/projects/ProjectModal";
 import { useProjects } from "../hooks/useProjects";
+import { useTasks } from "../hooks/useTasks";
 import { useToast } from "../hooks/useToast";
+import { calculateProjectProgress } from "../utils/projectProgress";
 import { connectRepository } from "../services/repositoryService";
 import type { GithubRepo } from "../types/github";
 import type { ProjectFormData } from "../schemas/projectSchema";
@@ -25,6 +27,7 @@ function Projects() {
     } = useProjects();
 
     const { showToast } = useToast();
+    const { tasks } = useTasks();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -60,7 +63,11 @@ function Projects() {
                 );
                 break;
             case "progress":
-                sorted.sort((a, b) => b.progress - a.progress);
+                sorted.sort((a, b) => {
+                    const progA = calculateProjectProgress(tasks, a.id, a.progress).progress;
+                    const progB = calculateProjectProgress(tasks, b.id, b.progress).progress;
+                    return progB - progA;
+                });
                 break;
             case "name":
                 sorted.sort((a, b) => a.name.localeCompare(b.name));
@@ -278,7 +285,7 @@ function Projects() {
                               name: editingProject.name,
                               description: editingProject.description,
                               status: editingProject.status,
-                              progress: editingProject.progress,
+                              progress: calculateProjectProgress(tasks, editingProject.id, editingProject.progress).progress,
                           }
                         : undefined
                 }

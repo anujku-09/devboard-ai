@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, Activity, AlertTriangle, ShieldCheck, RefreshCw } from "lucide-react";
 import { useProjectHealth } from "../../hooks/useProjectHealth";
 import { useProjectCollaborators } from "../../hooks/useProjectCollaborators";
+import { reconcileProjectProgress } from "../../services/projectService";
 import type { Project } from "../../types/project";
 import type { Task } from "../../types/task";
 
@@ -42,6 +43,27 @@ function ProjectHealthModal({
 }: ProjectHealthModalProps) {
     const { health, loading, error, analyze } = useProjectHealth();
     const { collaborators } = useProjectCollaborators(project.id);
+
+    const totalTasks = tasks.length;
+    const completedTasks = tasks.filter((t) => t.status === "Completed").length;
+    const calculatedProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : project.progress;
+    const hasDiscrepancy = totalTasks > 0 && Math.abs(project.progress - calculatedProgress) >= 1;
+
+    const [reconciling, setReconciling] = useState(false);
+
+    async function handleReconcile() {
+        setReconciling(true);
+        try {
+            const newProgress = await reconcileProjectProgress(project.id);
+            project.progress = newProgress;
+            localStorage.removeItem(`health_${project.id}`);
+            await analyze(project, tasks, repoConnected, true, Math.max(1, collaborators.length + 1), 0);
+        } catch (err) {
+            console.error("Failed to reconcile progress:", err);
+        } finally {
+            setReconciling(false);
+        }
+    }
 
     useEffect(() => {
         if (!open) return;
@@ -102,6 +124,32 @@ function ProjectHealthModal({
                         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mb-3 truncate">
                             Evaluation for <span className="font-medium text-slate-700 dark:text-slate-300">{project.name}</span>
                         </p>
+
+                        {/* Progress Discrepancy Alert & 1-Click Reconcile */}
+                        {hasDiscrepancy && (
+                            <div className="mb-3 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                                <div className="flex items-start sm:items-center gap-2">
+                                    <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5 sm:mt-0" />
+                                    <div>
+                                        <span className="font-semibold text-slate-800 dark:text-slate-100">
+                                            Progress Discrepancy Detected
+                                        </span>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                            Database recorded {project.progress}%, but actual task completion is {calculatedProgress}% ({completedTasks}/{totalTasks} tasks completed).
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => void handleReconcile()}
+                                    disabled={reconciling || loading}
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold transition-colors shrink-0 text-xs shadow-xs"
+                                >
+                                    <RefreshCw size={12} className={reconciling ? "animate-spin" : ""} />
+                                    <span>Sync with Tasks</span>
+                                </button>
+                            </div>
+                        )}
 
                         <div className="overflow-y-auto -mx-1 px-1 space-y-3 sm:space-y-4 flex-1">
                             {loading && !health ? (

@@ -1,5 +1,5 @@
 import { supabase } from "../lib/supabase";
-import { getProjects } from "./projectService";
+import { getProjects, reconcileProjectProgress } from "./projectService";
 import type { Task } from "../types/task";
 
 type TaskRow = {
@@ -113,7 +113,12 @@ export async function createTask(task: Omit<Task, "id" | "createdAt">): Promise<
     .single();
 
   if (error) throw getUserFacingError(error);
-  return mapTask(data as TaskRow);
+  const created = mapTask(data as TaskRow);
+
+  // Automatically keep project progress in sync with task completion
+  void reconcileProjectProgress(created.projectId);
+
+  return created;
 }
 
 export async function updateTask(task: Partial<Omit<Task, "createdAt">> & { id: string }): Promise<Task> {
@@ -139,7 +144,12 @@ export async function updateTask(task: Partial<Omit<Task, "createdAt">> & { id: 
     .single();
 
   if (error) throw getUserFacingError(error);
-  return mapTask(data as TaskRow);
+  const updated = mapTask(data as TaskRow);
+
+  // Automatically keep project progress in sync with task completion
+  void reconcileProjectProgress(updated.projectId);
+
+  return updated;
 }
 
 export async function deleteTask(id: string): Promise<void> {
@@ -151,10 +161,20 @@ export async function deleteTask(id: string): Promise<void> {
   if (userError) throw userError;
   if (!user) throw new Error("You must be logged in to delete a task.");
 
+  const { data: existing } = await supabase
+    .from("tasks")
+    .select("project_id")
+    .eq("id", id)
+    .single();
+
   const { error } = await supabase
     .from("tasks")
     .delete()
     .eq("id", id);
 
   if (error) throw getUserFacingError(error);
+
+  if (existing?.project_id) {
+    void reconcileProjectProgress(existing.project_id);
+  }
 }

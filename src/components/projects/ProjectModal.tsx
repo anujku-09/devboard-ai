@@ -288,9 +288,15 @@ function ProjectModal({
                     {...register("progress", { valueAsNumber: true })}
                   />
 
-                  {errors.progress && (
+                  {errors.progress ? (
                     <p className="text-danger text-xs mt-1">
                       {errors.progress.message}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      {isEditMode
+                        ? "Automatically synced with task completion."
+                        : "Initial baseline; dynamically tracks tasks once created."}
                     </p>
                   )}
                 </div>
