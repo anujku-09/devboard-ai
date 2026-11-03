@@ -37,8 +37,9 @@ function ProjectBreakdownModal({ open, project, onClose, onTasksCreated }: Proje
     }, [open, project.name, project.description, generate]);
 
     useEffect(() => {
+        if (!open) return;
         setSelected(new Set(tasks.map((_, index) => index)));
-    }, [tasks]);
+    }, [open, tasks]);
 
     function toggle(index: number) {
         setSelected((previous) => {

@@ -71,6 +71,11 @@ function Sidebar({ isOpen, onClose }: SidebarProps) {
         return projects[0] || null;
     }, [projects, routeProjectId, manualProjectId]);
 
+    const projectTasks = useMemo(() => {
+        if (!targetProject) return [];
+        return tasks.filter((t) => t.projectId === targetProject.id);
+    }, [tasks, targetProject?.id]);
+
     async function handleLogout() {
         await logout();
         onClose?.();
@@ -401,7 +406,7 @@ function Sidebar({ isOpen, onClose }: SidebarProps) {
                     <ProjectHealthModal
                         open={healthModalOpen}
                         project={targetProject}
-                        tasks={tasks.filter((t) => t.projectId === targetProject.id)}
+                        tasks={projectTasks}
                         repoConnected={connectedProjectIds.has(targetProject.id)}
                         onClose={() => setHealthModalOpen(false)}
                     />
@@ -409,7 +414,7 @@ function Sidebar({ isOpen, onClose }: SidebarProps) {
                     <AiTaskSuggestionModal
                         open={suggestionModalOpen}
                         project={targetProject}
-                        tasks={tasks.filter((t) => t.projectId === targetProject.id)}
+                        tasks={projectTasks}
                         repoConnection={repoConnections.find((c) => c.projectId === targetProject.id) || null}
                         onClose={() => setSuggestionModalOpen(false)}
                         onTaskUpdated={updateTask}

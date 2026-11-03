@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 
 import AuthContext from "./AuthContext";
@@ -58,7 +58,7 @@ function AuthProvider({
         };
     }, []);
 
-    const handleLogin = async (
+    const handleLogin = useCallback(async (
         email: string,
         password: string
     ) => {
@@ -69,10 +69,9 @@ function AuthProvider({
             await getCurrentUser();
 
         setUser(currentUser);
+    }, []);
 
-    };
-
-    const handleSignUp = async (
+    const handleSignUp = useCallback(async (
         email: string,
         password: string,
         username: string
@@ -88,40 +87,53 @@ function AuthProvider({
         }
 
         return result;
-    };
+    }, []);
 
-    const handleLogout = async () => {
+    const handleLogout = useCallback(async () => {
         await logout();
         setUser(null);
-    };
+    }, []);
 
-    const handleUpdateUsername = async (username: string) => {
+    const handleUpdateUsername = useCallback(async (username: string) => {
         const updatedUser = await updateUsername(username);
         setUser(updatedUser);
-    };
+    }, []);
 
-    const handleUpdatePassword = async (password: string) => {
+    const handleUpdatePassword = useCallback(async (password: string) => {
         await updatePassword(password);
-    };
+    }, []);
 
-    const handleSendPasswordResetEmail = async (email: string) => {
+    const handleSendPasswordResetEmail = useCallback(async (email: string) => {
         await sendPasswordResetEmail(email);
-    };
+    }, []);
+
+    const value = useMemo(
+        () => ({
+            user,
+            loading,
+            isAuthenticated,
+            login: handleLogin,
+            signUp: handleSignUp,
+            logout: handleLogout,
+            updateUsername: handleUpdateUsername,
+            updatePassword: handleUpdatePassword,
+            sendPasswordResetEmail: handleSendPasswordResetEmail,
+        }),
+        [
+            user,
+            loading,
+            isAuthenticated,
+            handleLogin,
+            handleSignUp,
+            handleLogout,
+            handleUpdateUsername,
+            handleUpdatePassword,
+            handleSendPasswordResetEmail,
+        ]
+    );
 
     return (
-        <AuthContext.Provider
-            value={{
-                user,
-                loading,
-                isAuthenticated,
-                login: handleLogin,
-                signUp: handleSignUp,
-                logout: handleLogout,
-                updateUsername: handleUpdateUsername,
-                updatePassword: handleUpdatePassword,
-                sendPasswordResetEmail: handleSendPasswordResetEmail,
-            }}
-        >
+        <AuthContext.Provider value={value}>
             {children}
         </AuthContext.Provider>
     );

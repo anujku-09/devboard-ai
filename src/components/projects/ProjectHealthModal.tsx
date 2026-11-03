@@ -66,9 +66,9 @@ function ProjectHealthModal({
     }
 
     useEffect(() => {
-        if (!open) return;
+        if (!open || !project?.id) return;
         void analyze(project, tasks, repoConnected, false, Math.max(1, collaborators.length + 1), 0);
-    }, [open, project, tasks, repoConnected, collaborators.length, analyze]);
+    }, [open, project?.id]);
 
     return createPortal(
         <AnimatePresence>

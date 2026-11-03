@@ -67,12 +67,13 @@ function AiTaskSuggestionModal({
 
     // Select all suggested tasks by default whenever a new batch is received
     useEffect(() => {
+        if (!open) return;
         if (suggestedTasks.length > 0) {
             setSelectedTaskIds(new Set(suggestedTasks.map((t) => t.id)));
         } else {
             setSelectedTaskIds(new Set());
         }
-    }, [suggestedTasks]);
+    }, [open, batch]);
 
     // Fetch suggestion: uses 24-hr localStorage cache first (0 tokens) unless forceRefresh = true
     const loadSuggestion = useCallback(
@@ -112,9 +113,9 @@ function AiTaskSuggestionModal({
     );
 
     useEffect(() => {
-        if (!open) return;
+        if (!open || !project?.id) return;
         void loadSuggestion(false);
-    }, [open, loadSuggestion]);
+    }, [open, project?.id]);
 
     function toggleTask(id: string) {
         setSelectedTaskIds((prev) => {

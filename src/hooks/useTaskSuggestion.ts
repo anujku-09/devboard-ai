@@ -1,7 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { suggestNextTasksBatch, getCachedAiResponse } from "../services/aiService";
 import type { AiNextTaskItem, AiTaskSuggestionBatch } from "../types/ai";
 import type { Task } from "../types/task";
+
+const EMPTY_TASKS: AiNextTaskItem[] = [];
 
 export function useTaskSuggestion() {
     const [batch, setBatch] = useState<AiTaskSuggestionBatch | null>(null);
@@ -62,23 +64,28 @@ export function useTaskSuggestion() {
         setError(null);
     }, []);
 
-    // For backwards compatibility with single-suggestion callers
-    const firstTask = batch?.tasks?.[0] ?? null;
-    const suggestion = firstTask
-        ? {
-              suggestedTaskId: firstTask.id,
-              suggestedTaskTitle: firstTask.title,
-              suggestedTaskDescription: firstTask.description,
-              priority: firstTask.priority,
-              isNewInferredTask: firstTask.isNewInferredTask,
-              reasoning: firstTask.reasoning || batch?.summary || "",
-              recommendedNextSteps: firstTask.recommendedNextSteps || [],
-          }
-        : null;
+    // For backwards compatibility with single-suggestion callers (memoized to avoid new references)
+    const suggestion = useMemo(() => {
+        const firstTask = batch?.tasks?.[0];
+        if (!firstTask) return null;
+        return {
+            suggestedTaskId: firstTask.id,
+            suggestedTaskTitle: firstTask.title,
+            suggestedTaskDescription: firstTask.description,
+            priority: firstTask.priority,
+            isNewInferredTask: firstTask.isNewInferredTask,
+            reasoning: firstTask.reasoning || batch?.summary || "",
+            recommendedNextSteps: firstTask.recommendedNextSteps || [],
+        };
+    }, [batch]);
+
+    const tasks = useMemo(() => {
+        return batch?.tasks ?? EMPTY_TASKS;
+    }, [batch]);
 
     return {
         batch,
-        tasks: batch?.tasks ?? ([] as AiNextTaskItem[]),
+        tasks,
         suggestion,
         loading,
         error,
