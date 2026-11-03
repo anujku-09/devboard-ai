@@ -6,6 +6,21 @@ export interface AiSuggestedTask {
     priority: TaskPriority;
 }
 
+export interface AiNextTaskItem {
+    id: string;
+    title: string;
+    description: string;
+    priority: TaskPriority;
+    reasoning?: string;
+    recommendedNextSteps?: string[];
+    isNewInferredTask?: boolean;
+}
+
+export interface AiTaskSuggestionBatch {
+    summary: string;
+    tasks: AiNextTaskItem[];
+}
+
 export interface AiTaskSuggestion {
     suggestedTaskId: string;
     suggestedTaskTitle: string;

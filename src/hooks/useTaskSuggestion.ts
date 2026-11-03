@@ -1,10 +1,10 @@
 import { useCallback, useState } from "react";
-import { suggestNextTask } from "../services/aiService";
-import type { AiTaskSuggestion } from "../types/ai";
+import { suggestNextTasksBatch, getCachedAiResponse } from "../services/aiService";
+import type { AiNextTaskItem, AiTaskSuggestionBatch } from "../types/ai";
 import type { Task } from "../types/task";
 
 export function useTaskSuggestion() {
-    const [suggestion, setSuggestion] = useState<AiTaskSuggestion | null>(null);
+    const [batch, setBatch] = useState<AiTaskSuggestionBatch | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -16,24 +16,40 @@ export function useTaskSuggestion() {
             forceRefresh: boolean = false,
             collaboratorsCount: number = 1,
             projectDescription: string = "",
-            repoConnected: boolean = false
+            repoConnected: boolean = false,
+            projectId?: string
         ) => {
+            const cacheKey = projectId ? `suggestion_${projectId}` : `suggestion_${projectName.replace(/\s+/g, "_")}`;
+
+            // Check persistent localStorage cache first if not explicitly refreshing
+            if (!forceRefresh) {
+                const cached = getCachedAiResponse<AiTaskSuggestionBatch>(cacheKey);
+                if (cached) {
+                    setBatch(cached);
+                    setError(null);
+                    return cached;
+                }
+            }
+
             setLoading(true);
             setError(null);
 
             try {
-                const result = await suggestNextTask(
+                const result = await suggestNextTasksBatch(
                     tasks,
                     projectName,
                     recentCommitMessages,
                     forceRefresh,
                     collaboratorsCount,
                     projectDescription,
-                    repoConnected
+                    repoConnected,
+                    projectId
                 );
-                setSuggestion(result);
+                setBatch(result);
+                return result;
             } catch (err) {
-                setError(err instanceof Error ? err.message : "Failed to get AI task suggestion.");
+                setError(err instanceof Error ? err.message : "Failed to get AI task suggestions.");
+                return null;
             } finally {
                 setLoading(false);
             }
@@ -42,9 +58,31 @@ export function useTaskSuggestion() {
     );
 
     const reset = useCallback(() => {
-        setSuggestion(null);
+        setBatch(null);
         setError(null);
     }, []);
 
-    return { suggestion, loading, error, getSuggestion, reset };
+    // For backwards compatibility with single-suggestion callers
+    const firstTask = batch?.tasks?.[0] ?? null;
+    const suggestion = firstTask
+        ? {
+              suggestedTaskId: firstTask.id,
+              suggestedTaskTitle: firstTask.title,
+              suggestedTaskDescription: firstTask.description,
+              priority: firstTask.priority,
+              isNewInferredTask: firstTask.isNewInferredTask,
+              reasoning: firstTask.reasoning || batch?.summary || "",
+              recommendedNextSteps: firstTask.recommendedNextSteps || [],
+          }
+        : null;
+
+    return {
+        batch,
+        tasks: batch?.tasks ?? ([] as AiNextTaskItem[]),
+        suggestion,
+        loading,
+        error,
+        getSuggestion,
+        reset,
+    };
 }

@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X, Sparkles, ArrowRight, RefreshCw, CheckCircle2, GitBranch, Plus, Loader2 } from "lucide-react";
+import { X, Sparkles, ArrowRight, RefreshCw, GitBranch, Plus, Loader2, CheckSquare, Square, ShieldCheck } from "lucide-react";
 
 import { useAuth } from "../../hooks/useAuth";
 import { useTaskSuggestion } from "../../hooks/useTaskSuggestion";
@@ -10,7 +10,14 @@ import { listCommits } from "../../services/githubApiService";
 import { addWorkspaceNotification } from "../../services/notificationService";
 import type { RepositoryConnection } from "../../types/github";
 import type { Project } from "../../types/project";
-import type { Task } from "../../types/task";
+import type { Task, TaskPriority } from "../../types/task";
+import type { AiNextTaskItem } from "../../types/ai";
+
+const priorityPillStyles: Record<TaskPriority, string> = {
+    Low: "bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300",
+    Medium: "bg-signal/15 text-signal border border-signal/25",
+    High: "bg-danger/15 text-danger border border-danger/25",
+};
 
 interface AiTaskSuggestionModalProps {
     open: boolean;
@@ -20,6 +27,7 @@ interface AiTaskSuggestionModalProps {
     onClose: () => void;
     onTaskUpdated: (updatedTask: Task) => void;
     onTaskCreated?: (newTask: Task) => void;
+    onTasksCreated?: (newTasks: Task[]) => void;
 }
 
 function AiTaskSuggestionModal({
@@ -30,16 +38,18 @@ function AiTaskSuggestionModal({
     onClose,
     onTaskUpdated,
     onTaskCreated,
+    onTasksCreated,
 }: AiTaskSuggestionModalProps) {
     const { user } = useAuth();
-    const { suggestion, loading, error, getSuggestion } = useTaskSuggestion();
+    const { batch, tasks: suggestedTasks, loading, error, getSuggestion } = useTaskSuggestion();
 
     const [activeRepo, setActiveRepo] = useState<RepositoryConnection | null>(repoConnection ?? null);
     const [fetchingCommits, setFetchingCommits] = useState(false);
+    const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
     const [isExecutingAction, setIsExecutingAction] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
 
-    // Resolve repository connection if not explicitly provided as prop
+    // Resolve repository connection if not provided as prop
     useEffect(() => {
         if (!open) return;
 
@@ -51,21 +61,26 @@ function AiTaskSuggestionModal({
         if (project?.id) {
             void getRepositoryConnection(project.id)
                 .then((conn) => setActiveRepo(conn))
-                .catch((err) => {
-                    console.warn("Could not retrieve repository connection for project:", err);
-                    setActiveRepo(null);
-                });
+                .catch(() => setActiveRepo(null));
         }
     }, [open, project?.id, repoConnection]);
 
+    // Select all suggested tasks by default whenever a new batch is received
+    useEffect(() => {
+        if (suggestedTasks.length > 0) {
+            setSelectedTaskIds(new Set(suggestedTasks.map((t) => t.id)));
+        } else {
+            setSelectedTaskIds(new Set());
+        }
+    }, [suggestedTasks]);
+
+    // Fetch suggestion: uses 24-hr localStorage cache first (0 tokens) unless forceRefresh = true
     const loadSuggestion = useCallback(
         async (forceRefresh: boolean = false) => {
             if (!project) return;
-
             setActionError(null);
             let commitMessages: string[] = [];
 
-            // If a repository is connected, fetch recent commits from GitHub REST API
             if (activeRepo?.owner && activeRepo?.name) {
                 setFetchingCommits(true);
                 try {
@@ -76,7 +91,7 @@ function AiTaskSuggestionModal({
                     );
                     commitMessages = commits.map((c) => c.message);
                 } catch (err) {
-                    console.warn("[AiTaskSuggestionModal] Failed to fetch git commits:", err);
+                    console.warn("[AiTaskSuggestionModal] Could not fetch commits:", err);
                 } finally {
                     setFetchingCommits(false);
                 }
@@ -89,7 +104,8 @@ function AiTaskSuggestionModal({
                 forceRefresh,
                 1,
                 project.description || "",
-                Boolean(activeRepo)
+                Boolean(activeRepo),
+                project.id
             );
         },
         [activeRepo, getSuggestion, project, tasks]
@@ -100,68 +116,85 @@ function AiTaskSuggestionModal({
         void loadSuggestion(false);
     }, [open, loadSuggestion]);
 
-    async function handlePrimaryAction() {
-        if (!suggestion) return;
-        setIsExecutingAction(true);
-        setActionError(null);
+    function toggleTask(id: string) {
+        setSelectedTaskIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    }
 
+    function handleSelectAll() {
+        if (selectedTaskIds.size === suggestedTasks.length) {
+            setSelectedTaskIds(new Set());
+        } else {
+            setSelectedTaskIds(new Set(suggestedTasks.map((t) => t.id)));
+        }
+    }
+
+    const selectedTasks = useMemo(() => {
+        return suggestedTasks.filter((t) => selectedTaskIds.has(t.id));
+    }, [suggestedTasks, selectedTaskIds]);
+
+    const hasInferredTasks = selectedTasks.some((t) => t.isNewInferredTask);
+
+    async function handlePrimaryAction() {
+        if (selectedTasks.length === 0) return;
         if (!user) {
-            setActionError("You must be logged in to create or start a task.");
+            setActionError("You must be logged in to create or start tasks.");
             return;
         }
 
+        setIsExecutingAction(true);
+        setActionError(null);
+
         try {
-            if (suggestion.isNewInferredTask) {
-                // Scenario: AI suggested a brand new task from commits & project scope
-                const created = await createTaskService({
-                    projectId: project.id,
-                    userId: user.id,
-                    title: suggestion.suggestedTaskTitle,
-                    description: suggestion.suggestedTaskDescription || suggestion.reasoning || "",
-                    priority: suggestion.priority || "High",
-                    status: "In Progress",
-                    dueDate: null,
-                });
+            const createdTasks: Task[] = [];
 
-                if (user?.id) {
-                    addWorkspaceNotification(user.id, {
-                        title: "AI Suggested Task Started",
-                        message: `Added "${suggestion.suggestedTaskTitle}" to ${project.name} and marked In Progress.`,
-                        type: "ai",
+            for (const item of selectedTasks) {
+                if (item.isNewInferredTask) {
+                    const created = await createTaskService({
+                        projectId: project.id,
+                        userId: user.id,
+                        title: item.title,
+                        description: item.description || item.reasoning || "",
+                        priority: item.priority,
+                        status: "In Progress",
+                        dueDate: null,
                     });
-                }
-
-                if (onTaskCreated) {
-                    onTaskCreated(created);
+                    createdTasks.push(created);
+                    onTaskCreated?.(created);
                 } else {
-                    onTaskUpdated(created);
+                    const targetTask = tasks.find((t) => t.id === item.id);
+                    if (targetTask) {
+                        const updated = await updateTaskService({
+                            ...targetTask,
+                            status: "In Progress",
+                        });
+                        onTaskUpdated(updated);
+                    }
                 }
-                onClose();
-            } else {
-                // Scenario: AI prioritized an existing backlog task
-                const targetTask = tasks.find((t) => t.id === suggestion.suggestedTaskId);
-                if (!targetTask) {
-                    throw new Error("Could not find the target task in the project backlog.");
-                }
-
-                const updated = await updateTaskService({
-                    ...targetTask,
-                    status: "In Progress",
-                });
-
-                if (user?.id) {
-                    addWorkspaceNotification(user.id, {
-                        title: "Task Priority Started",
-                        message: `Moved "${targetTask.title}" to In Progress based on AI recommendation.`,
-                        type: "ai",
-                    });
-                }
-
-                onTaskUpdated(updated);
-                onClose();
             }
+
+            if (createdTasks.length > 0 && onTasksCreated) {
+                onTasksCreated(createdTasks);
+            }
+
+            if (user?.id) {
+                addWorkspaceNotification(user.id, {
+                    title: "AI Next Tasks Added",
+                    message: `Added ${selectedTasks.length} task(s) to ${project.name} and set to In Progress.`,
+                    type: "ai",
+                });
+            }
+
+            onClose();
         } catch (err) {
-            console.error("Failed to execute task action:", err);
+            console.error("Failed to execute batch task creation:", err);
             setActionError(err instanceof Error ? err.message : "Failed to execute action.");
         } finally {
             setIsExecutingAction(false);
@@ -169,6 +202,7 @@ function AiTaskSuggestionModal({
     }
 
     const isWorking = loading || fetchingCommits;
+    const isAllSelected = suggestedTasks.length > 0 && selectedTaskIds.size === suggestedTasks.length;
 
     return (
         <AnimatePresence>
@@ -187,7 +221,7 @@ function AiTaskSuggestionModal({
                         exit={{ opacity: 0, y: 12, scale: 0.97 }}
                         transition={{ duration: 0.2, ease: "easeOut" }}
                         onClick={(event) => event.stopPropagation()}
-                        className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/10 rounded-2xl shadow-xl w-full max-w-lg p-4 sm:p-6 max-h-[85vh] flex flex-col"
+                        className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-white/10 rounded-2xl shadow-xl w-full max-w-xl p-4 sm:p-6 max-h-[88vh] flex flex-col"
                     >
                         {/* Header */}
                         <div className="flex justify-between items-center mb-2">
@@ -196,7 +230,7 @@ function AiTaskSuggestionModal({
                                     <Sparkles size={18} />
                                 </span>
                                 <h2 className="font-display text-base sm:text-xl font-semibold text-slate-900 dark:text-white">
-                                    Next Recommended Task
+                                    What's Next? (AI Recommendations)
                                 </h2>
                             </div>
 
@@ -206,7 +240,7 @@ function AiTaskSuggestionModal({
                                     onClick={() => void loadSuggestion(true)}
                                     disabled={isWorking || isExecutingAction}
                                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-ember hover:bg-slate-100 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
-                                    title="Bypass cache and fetch fresh AI task recommendation"
+                                    title="Calls Gemini API to fetch a fresh set of recommendations"
                                 >
                                     <RefreshCw size={12} className={isWorking ? "animate-spin" : ""} />
                                     <span>Refresh</span>
@@ -222,32 +256,51 @@ function AiTaskSuggestionModal({
                             </div>
                         </div>
 
-                        {/* Subtitle / Repo badge */}
+                        {/* Project Subtitle & Quota Protection Indicator */}
                         <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-3 gap-2 truncate">
                             <p className="truncate">
-                                Prioritizing for <span className="font-medium text-slate-700 dark:text-slate-300">{project.name}</span>
+                                Project: <span className="font-medium text-slate-700 dark:text-slate-300">{project.name}</span>
                             </p>
-                            {activeRepo && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 shrink-0">
-                                    <GitBranch size={10} className="text-ember" />
-                                    <span>{activeRepo.name}</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                                {activeRepo && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300">
+                                        <GitBranch size={10} className="text-ember" />
+                                        <span>{activeRepo.name}</span>
+                                    </span>
+                                )}
+                                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-signal/10 text-signal border border-signal/20">
+                                    <ShieldCheck size={10} />
+                                    <span>Quota Protected (24h Cache)</span>
                                 </span>
-                            )}
+                            </div>
                         </div>
 
+                        {/* Multi-Selection Controls Header */}
+                        {suggestedTasks.length > 0 && !isWorking && (
+                            <div className="flex items-center justify-between px-2 py-1.5 rounded-xl bg-slate-50 dark:bg-surface-dark-raised/40 border border-slate-200/60 dark:border-white/5 mb-2 text-xs">
+                                <span className="font-medium text-slate-600 dark:text-slate-300">
+                                    {selectedTaskIds.size} of {suggestedTasks.length} task(s) selected
+                                </span>
+
+                                <button
+                                    type="button"
+                                    onClick={handleSelectAll}
+                                    className="font-semibold text-ember hover:underline text-xs"
+                                >
+                                    {isAllSelected ? "Clear Selection" : "Select All"}
+                                </button>
+                            </div>
+                        )}
+
                         {/* Modal Body */}
-                        <div className="overflow-y-auto -mx-1 px-1 space-y-3 sm:space-y-4 flex-1">
-                            {isWorking && !suggestion ? (
-                                <div className="space-y-3 p-4 text-center">
+                        <div className="overflow-y-auto -mx-1 px-1 space-y-3 flex-1">
+                            {isWorking && suggestedTasks.length === 0 ? (
+                                <div className="space-y-3 p-6 text-center">
                                     <div className="h-20 rounded-xl bg-slate-200/60 dark:bg-white/5 animate-pulse" />
                                     <div className="h-16 rounded-xl bg-slate-200/60 dark:bg-white/5 animate-pulse" />
-                                    <p className="text-xs text-slate-400 flex items-center justify-center gap-2">
+                                    <p className="text-xs text-slate-400 flex items-center justify-center gap-2 pt-2">
                                         <Loader2 size={13} className="animate-spin text-purple-400" />
-                                        <span>
-                                            {activeRepo
-                                                ? "Analyzing git commit history & project scope with Gemini AI..."
-                                                : "Evaluating project backlog with Gemini AI..."}
-                                        </span>
+                                        <span>Analyzing commit history & backlog with Gemini AI...</span>
                                     </p>
                                 </div>
                             ) : error ? (
@@ -257,69 +310,78 @@ function AiTaskSuggestionModal({
                                         Tip: Connect a GitHub repository in Repository Hub or add tasks to unlock AI suggestions.
                                     </p>
                                 </div>
-                            ) : suggestion ? (
+                            ) : suggestedTasks.length > 0 ? (
                                 <>
-                                    {/* Recommended Task Highlight Card */}
-                                    <div className="p-4 rounded-xl border border-purple-500/30 bg-purple-500/5 space-y-2.5">
-                                        <div className="flex items-center justify-between gap-2">
-                                            {suggestion.isNewInferredTask ? (
-                                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-ember/15 text-ember border border-ember/25">
-                                                    <GitBranch size={11} />
-                                                    <span>Inferred from Git Commits & Project Context</span>
-                                                </span>
-                                            ) : (
-                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-purple-500/15 text-purple-400 border border-purple-500/20">
-                                                    Top Priority Target
-                                                </span>
-                                            )}
-
-                                            {suggestion.priority && (
-                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300">
-                                                    {suggestion.priority} Priority
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        <h3 className="font-display font-bold text-slate-900 dark:text-white text-base sm:text-lg">
-                                            {suggestion.suggestedTaskTitle}
-                                        </h3>
-
-                                        {suggestion.suggestedTaskDescription && (
-                                            <p className="text-xs text-slate-700 dark:text-slate-300 bg-white/60 dark:bg-surface-dark-raised/60 p-2.5 rounded-lg border border-slate-200/50 dark:border-white/5 leading-relaxed">
-                                                {suggestion.suggestedTaskDescription}
-                                            </p>
-                                        )}
-
-                                        <div className="space-y-1">
-                                            <p className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">
-                                                Why This Is Next
-                                            </p>
-                                            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
-                                                {suggestion.reasoning}
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    {/* Action Steps */}
-                                    {suggestion.recommendedNextSteps?.length > 0 && (
-                                        <div className="space-y-2">
-                                            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                                                <CheckCircle2 size={13} className="text-signal" />
-                                                <span>Recommended Execution Steps</span>
-                                            </h4>
-                                            <div className="space-y-1.5">
-                                                {suggestion.recommendedNextSteps.map((step, idx) => (
-                                                    <div
-                                                        key={idx}
-                                                        className="p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-surface-dark-raised/40 text-xs text-slate-700 dark:text-slate-300 flex items-start gap-2"
-                                                    >
-                                                        <span className="font-bold text-purple-400 shrink-0">{idx + 1}.</span>
-                                                        <span>{step}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                    {/* Milestone Summary Box */}
+                                    {batch?.summary && (
+                                        <div className="p-3 rounded-xl border border-purple-500/25 bg-purple-500/5 text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                                            {batch.summary}
                                         </div>
                                     )}
+
+                                    {/* Selectable Tasks List */}
+                                    <div className="space-y-2.5">
+                                        {suggestedTasks.map((task: AiNextTaskItem) => {
+                                            const isSelected = selectedTaskIds.has(task.id);
+
+                                            return (
+                                                <div
+                                                    key={task.id}
+                                                    onClick={() => toggleTask(task.id)}
+                                                    className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 select-none ${
+                                                        isSelected
+                                                            ? "border-ember/40 bg-ember/5 dark:bg-ember/10 shadow-xs"
+                                                            : "border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-surface-dark-raised/30 opacity-75 hover:opacity-100"
+                                                    }`}
+                                                >
+                                                    {/* Checkbox Icon */}
+                                                    <div className="pt-0.5 shrink-0 text-ember">
+                                                        {isSelected ? (
+                                                            <CheckSquare size={17} className="text-ember" />
+                                                        ) : (
+                                                            <Square size={17} className="text-slate-400" />
+                                                        )}
+                                                    </div>
+
+                                                    {/* Task Information */}
+                                                    <div className="flex-1 min-w-0 space-y-1">
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <h4 className="font-semibold text-slate-900 dark:text-white text-xs sm:text-sm truncate">
+                                                                {task.title}
+                                                            </h4>
+
+                                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                                <span
+                                                                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                                                        priorityPillStyles[task.priority]
+                                                                    }`}
+                                                                >
+                                                                    {task.priority}
+                                                                </span>
+                                                                {task.isNewInferredTask && (
+                                                                    <span className="hidden sm:inline px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-500/15 text-purple-400">
+                                                                        New
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        {task.description && (
+                                                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                                                {task.description}
+                                                            </p>
+                                                        )}
+
+                                                        {task.reasoning && (
+                                                            <p className="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                                                                Why: {task.reasoning}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
 
                                     {actionError && (
                                         <p className="text-xs text-danger text-center">{actionError}</p>
@@ -329,40 +391,46 @@ function AiTaskSuggestionModal({
                         </div>
 
                         {/* Footer Action Buttons */}
-                        {suggestion && (
-                            <div className="flex justify-end gap-2.5 pt-4 mt-2 border-t border-slate-200 dark:border-white/10 shrink-0">
-                                <button
-                                    type="button"
-                                    onClick={onClose}
-                                    disabled={isExecutingAction}
-                                    className="px-4 py-2 rounded-xl border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors text-xs font-semibold disabled:opacity-50"
-                                >
-                                    Dismiss
-                                </button>
+                        {suggestedTasks.length > 0 && (
+                            <div className="flex justify-between items-center pt-3 mt-2 border-t border-slate-200 dark:border-white/10 shrink-0">
+                                <span className="text-xs text-slate-400">
+                                    {selectedTaskIds.size} of {suggestedTasks.length} selected
+                                </span>
 
-                                <button
-                                    type="button"
-                                    onClick={() => void handlePrimaryAction()}
-                                    disabled={isExecutingAction}
-                                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-purple-500 text-white font-semibold hover:bg-purple-600 transition-colors text-xs shadow-xs disabled:opacity-50"
-                                >
-                                    {isExecutingAction ? (
-                                        <>
-                                            <Loader2 size={13} className="animate-spin" />
-                                            <span>Processing...</span>
-                                        </>
-                                    ) : suggestion.isNewInferredTask ? (
-                                        <>
-                                            <Plus size={13} />
-                                            <span>Create & Start This Task</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span>Move Task to "In Progress"</span>
-                                            <ArrowRight size={13} />
-                                        </>
-                                    )}
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={onClose}
+                                        disabled={isExecutingAction}
+                                        className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors text-xs font-semibold disabled:opacity-50"
+                                    >
+                                        Dismiss
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => void handlePrimaryAction()}
+                                        disabled={isExecutingAction || selectedTaskIds.size === 0}
+                                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-ember text-ink font-semibold hover:bg-ember-dark transition-colors text-xs shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isExecutingAction ? (
+                                            <>
+                                                <Loader2 size={13} className="animate-spin" />
+                                                <span>Adding ({selectedTaskIds.size})...</span>
+                                            </>
+                                        ) : hasInferredTasks ? (
+                                            <>
+                                                <Plus size={13} />
+                                                <span>Add Selected Tasks ({selectedTaskIds.size})</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span>Start Selected Tasks ({selectedTaskIds.size})</span>
+                                                <ArrowRight size={13} />
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </motion.div>

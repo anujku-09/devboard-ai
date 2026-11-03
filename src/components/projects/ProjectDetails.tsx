@@ -500,6 +500,7 @@ function ProjectDetails() {
         onClose={() => setSuggestionOpen(false)}
         onTaskUpdated={(updated) => setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))}
         onTaskCreated={(newTask) => setTasks((prev) => [newTask, ...prev])}
+        onTasksCreated={(newTasks) => setTasks((prev) => [...newTasks, ...prev])}
       />
 
       <ProjectHealthModal

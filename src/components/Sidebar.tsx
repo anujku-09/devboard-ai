@@ -425,6 +425,20 @@ function Sidebar({ isOpen, onClose }: SidebarProps) {
                                 dueDate: newTask.dueDate,
                             });
                         }}
+                        onTasksCreated={async (newTasks) => {
+                            if (!user) return;
+                            for (const newTask of newTasks) {
+                                await createTask({
+                                    projectId: newTask.projectId,
+                                    userId: newTask.userId || user.id,
+                                    title: newTask.title,
+                                    description: newTask.description,
+                                    status: newTask.status,
+                                    priority: newTask.priority,
+                                    dueDate: newTask.dueDate,
+                                });
+                            }
+                        }}
                     />
 
                     <ProjectBreakdownModal

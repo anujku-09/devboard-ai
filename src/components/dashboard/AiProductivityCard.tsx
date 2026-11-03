@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { Zap, RefreshCw, Trophy, Lightbulb, CheckCircle2, Sparkles } from "lucide-react";
 
@@ -23,13 +22,7 @@ function AiProductivityCard({ tasks, projects }: AiProductivityCardProps) {
     const { connection } = useGithubConnection();
     const { insight, loading, error, generate } = useProductivityInsights();
 
-    // Auto-load from 30-min cache on Dashboard mount
-    useEffect(() => {
-        if (tasks.length > 0 || projects.length > 0) {
-            void generate(tasks, projects, connection?.githubUsername, false);
-        }
-    }, [tasks, projects, connection?.githubUsername, generate]);
-
+    // Only fetch when the user explicitly requests it (zero automated token burn)
     function handleGenerate(forceRefresh: boolean = false) {
         void generate(tasks, projects, connection?.githubUsername, forceRefresh);
     }
@@ -82,7 +75,7 @@ function AiProductivityCard({ tasks, projects }: AiProductivityCardProps) {
                             </span>
                             <span className="text-[11px] text-slate-400 flex items-center gap-1">
                                 <Sparkles size={11} className="text-ember" />
-                                Gemini 1.5 Flash
+                                Gemini 3.5 Flash
                             </span>
                         </div>
                         <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-medium">

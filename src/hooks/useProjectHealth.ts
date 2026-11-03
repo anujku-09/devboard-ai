@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { analyzeProjectHealth } from "../services/aiService";
+import { analyzeProjectHealth, getCachedAiResponse } from "../services/aiService";
 import { addWorkspaceNotification } from "../services/notificationService";
 import type { AiProjectHealth } from "../types/ai";
 import type { Project } from "../types/project";
@@ -19,6 +19,17 @@ export function useProjectHealth() {
             collaboratorsCount: number = 1,
             linkedGithubCount: number = 0
         ) => {
+            const cacheKey = `health_${project.id}`;
+
+            if (!forceRefresh) {
+                const cached = getCachedAiResponse<AiProjectHealth>(cacheKey);
+                if (cached) {
+                    setHealth(cached);
+                    setError(null);
+                    return cached;
+                }
+            }
+
             setLoading(true);
             setError(null);
 
@@ -32,15 +43,17 @@ export function useProjectHealth() {
                     linkedGithubCount
                 );
                 setHealth(result);
-                if (project.user_id) {
+                if (project.user_id && forceRefresh) {
                     addWorkspaceNotification(project.user_id, {
                         title: "Project Health Diagnostic",
                         message: `AI Health evaluated at ${result.healthScore}/100 (${result.status}) for ${project.name}.`,
                         type: "success",
                     });
                 }
+                return result;
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Failed to analyze project health.");
+                return null;
             } finally {
                 setLoading(false);
             }

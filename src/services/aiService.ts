@@ -1,4 +1,11 @@
-import type { AiProductivityInsight, AiProjectHealth, AiSuggestedTask, AiTaskSuggestion } from "../types/ai";
+import type {
+    AiNextTaskItem,
+    AiProductivityInsight,
+    AiProjectHealth,
+    AiSuggestedTask,
+    AiTaskSuggestion,
+    AiTaskSuggestionBatch,
+} from "../types/ai";
 import type { Project } from "../types/project";
 import type { Task } from "../types/task";
 
@@ -21,7 +28,7 @@ const CANDIDATE_TARGETS: GeminiTarget[] = [
 ];
 
 let lastWorkingTarget: GeminiTarget | null = null;
-const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 Minutes Cache TTL
+const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 Hours Cache TTL to preserve user API quota
 
 interface CachedPayload<T> {
     timestamp: number;
@@ -40,32 +47,55 @@ function cleanJsonText(raw: string): string {
 }
 
 /**
- * Smart Caching Helper for Gemini AI API Calls.
- * Caches responses in sessionStorage to protect API quotas.
+ * Reads from localStorage cache synchronously without making any API request.
  */
-async function cacheAiResponse<T>(
+export function getCachedAiResponse<T>(cacheKey: string, ttlMs: number = DEFAULT_TTL_MS): T | null {
+    try {
+        const fullKey = `devboard_ai_${cacheKey}`;
+        const raw = localStorage.getItem(fullKey);
+        if (raw) {
+            const parsed: CachedPayload<T> = JSON.parse(raw);
+            const isExpired = Date.now() - parsed.timestamp > ttlMs;
+            if (!isExpired) {
+                return parsed.data;
+            }
+        }
+    } catch (e) {
+        console.warn("Failed to read from persistent AI cache:", e);
+    }
+    return null;
+}
+
+/**
+ * Smart Caching Helper for Gemini AI API Calls.
+ * Caches responses persistently in localStorage with a 24-hour TTL
+ * to strictly prevent quota exhaustion and unnecessary API token consumption.
+ */
+export async function cacheAiResponse<T>(
     cacheKey: string,
     fetcher: () => Promise<T>,
     forceRefresh: boolean = false,
     ttlMs: number = DEFAULT_TTL_MS
 ): Promise<T> {
+    const fullKey = `devboard_ai_${cacheKey}`;
+
     if (!forceRefresh) {
         try {
-            const raw = sessionStorage.getItem(cacheKey);
+            const raw = localStorage.getItem(fullKey);
             if (raw) {
                 const parsed: CachedPayload<T> = JSON.parse(raw);
                 const isExpired = Date.now() - parsed.timestamp > ttlMs;
                 if (!isExpired) {
-                    console.log(`[AI Cache Hit] Returning cached response for key: ${cacheKey}`);
+                    console.log(`[AI Cache Hit - 0 Tokens Used] Loaded cached result for: ${cacheKey}`);
                     return parsed.data;
                 }
             }
         } catch (e) {
-            console.warn("Failed to read from AI cache:", e);
+            console.warn("Failed to read from persistent AI cache:", e);
         }
     }
 
-    console.log(`[AI Cache Miss / Refresh] Fetching fresh response from Gemini API for key: ${cacheKey}`);
+    console.log(`[AI Quota Usage] User triggered fresh Gemini API call for: ${cacheKey}`);
     const freshData = await fetcher();
 
     try {
@@ -73,9 +103,9 @@ async function cacheAiResponse<T>(
             timestamp: Date.now(),
             data: freshData,
         };
-        sessionStorage.setItem(cacheKey, JSON.stringify(payload));
+        localStorage.setItem(fullKey, JSON.stringify(payload));
     } catch (e) {
-        console.warn("Failed to write to AI cache:", e);
+        console.warn("Failed to write to persistent AI cache:", e);
     }
 
     return freshData;
@@ -118,13 +148,9 @@ async function executeGeminiRequest(
         ],
         generationConfig: {
             temperature: 0.2,
+            responseMimeType: "application/json",
         },
     };
-
-    // Structured JSON response configuration supported on 1.5+ and 2.0+ models
-    if (!target.model.includes("gemini-pro")) {
-        (body.generationConfig as Record<string, unknown>).responseMimeType = "application/json";
-    }
 
     const response = await fetch(endpoint, {
         method: "POST",
@@ -172,7 +198,6 @@ async function callGeminiWithRetry(prompt: string): Promise<string> {
 
     if (envModel) {
         targetsToTry.push({ apiVersion: "v1beta", model: envModel });
-        targetsToTry.push({ apiVersion: "v1", model: envModel });
     }
 
     if (lastWorkingTarget) {
@@ -240,7 +265,7 @@ export async function generateProjectBreakdown(
     projectDescription: string,
     forceRefresh: boolean = false
 ): Promise<AiSuggestedTask[]> {
-    const cacheKey = `ai_breakdown_${projectName.replace(/\s+/g, "_")}`;
+    const cacheKey = `breakdown_${projectName.replace(/\s+/g, "_")}`;
 
     return cacheAiResponse(
         cacheKey,
@@ -250,9 +275,9 @@ export async function generateProjectBreakdown(
 Project Name: ${projectName}
 Project Description: ${projectDescription || "No description provided."}
 
-Break this project into 5 to 10 concrete, actionable engineering tasks a developer could pick up immediately. Order them logically (setup/foundation first, polish/testing last).
+Break this project into 5 to 8 concrete, actionable engineering tasks. Order logically.
 
-Return a JSON array where each object has these exact properties:
+Return a JSON array where each object has these exact keys:
 - "title": string (short title)
 - "description": string (clear summary of work)
 - "priority": "Low" | "Medium" | "High"`;
@@ -266,36 +291,37 @@ Return a JSON array where each object has these exact properties:
 }
 
 /**
- * Evaluates what task to execute next.
- * Supports two key scenarios:
- * 1. Backlog has uncompleted tasks -> prioritizes the best existing task.
- * 2. Backlog has NO uncompleted tasks (0 tasks or all completed) AND repository is connected ->
- *    analyzes git commit history, project name, and description to deduce what should be built next!
+ * Evaluates what tasks to execute next with multi-task selection.
+ * Supports:
+ * 1. Backlog has uncompleted tasks -> prioritizes top 2-4 tasks from backlog.
+ * 2. Backlog has 0 uncompleted tasks AND repository connected ->
+ *    generates 3 to 5 logical next milestone tasks from git commits & project description.
  */
-export async function suggestNextTask(
+export async function suggestNextTasksBatch(
     tasks: Task[],
     projectName: string,
     recentCommitMessages: string[] = [],
     forceRefresh: boolean = false,
     collaboratorsCount: number = 1,
     projectDescription: string = "",
-    repoConnected: boolean = false
-): Promise<AiTaskSuggestion> {
+    repoConnected: boolean = false,
+    projectId?: string
+): Promise<AiTaskSuggestionBatch> {
     const uncompleted = tasks.filter((t) => t.status !== "Completed");
+    const cacheKey = projectId ? `suggestion_${projectId}` : `suggestion_${projectName.replace(/\s+/g, "_")}`;
 
     // Scenario 1: Existing uncompleted tasks in project backlog
     if (uncompleted.length > 0) {
-        const cacheKey = `ai_suggestion_${projectName.replace(/\s+/g, "_")}_${uncompleted.length}_collab_${collaboratorsCount}`;
-
         return cacheAiResponse(
             cacheKey,
             async () => {
                 const taskListText = uncompleted
+                    .slice(0, 15)
                     .map((t) => `- [ID: ${t.id}] ${t.title} (Priority: ${t.priority}, Status: ${t.status}): ${t.description}`)
                     .join("\n");
 
                 const commitText = recentCommitMessages.length > 0
-                    ? recentCommitMessages.slice(0, 15).map((c) => `- ${c}`).join("\n")
+                    ? recentCommitMessages.slice(0, 10).map((c) => `- ${c}`).join("\n")
                     : "No recent commits recorded.";
 
                 const prompt = `You are an expert AI engineering manager evaluating team workload.
@@ -304,33 +330,36 @@ Project Name: ${projectName}
 Project Description: ${projectDescription || "No description provided."}
 Active Team Collaborators: ${collaboratorsCount} member(s)
 
-Uncompleted Tasks Available:
+Uncompleted Tasks in Backlog:
 ${taskListText}
 
-Recent Repository Commits & Team Activity:
+Recent Commits:
 ${commitText}
 
-Analyze task priorities, logical engineering dependencies (e.g. data models and setup before algorithms), team capacity, and recent commit context.
-Select the single best existing task ID for the team to work on right now.
+Select the 2 to 4 most critical backlog tasks the developer should tackle next, ordered by priority.
 
-Return a JSON object with these exact keys:
-- "suggestedTaskId": string (must match one of the task IDs above)
-- "suggestedTaskTitle": string (title of the task)
-- "suggestedTaskDescription": string (description of the task)
-- "priority": "High" | "Medium" | "Low"
-- "reasoning": string (2-3 sentences explaining why this task is the priority now)
-- "recommendedNextSteps": string[] (array of 2 to 4 concrete action steps to execute this task)`;
+Return a JSON object with this exact structure:
+{
+  "summary": "1-2 sentence overview of next focus milestone",
+  "tasks": [
+    {
+      "id": "must match one of the task IDs above",
+      "title": "task title",
+      "description": "summary of work",
+      "priority": "High" | "Medium" | "Low",
+      "reasoning": "why this task is priority now"
+    }
+  ]
+}`;
 
                 const rawText = await callGeminiWithRetry(prompt);
                 const parsed = JSON.parse(cleanJsonText(rawText));
                 return {
-                    suggestedTaskId: parsed.suggestedTaskId,
-                    suggestedTaskTitle: parsed.suggestedTaskTitle,
-                    suggestedTaskDescription: parsed.suggestedTaskDescription || "",
-                    priority: parsed.priority || "High",
-                    isNewInferredTask: false,
-                    reasoning: parsed.reasoning,
-                    recommendedNextSteps: parsed.recommendedNextSteps || [],
+                    summary: parsed.summary || "Prioritized backlog tasks for your active sprint.",
+                    tasks: (parsed.tasks || []).map((t: AiNextTaskItem) => ({
+                        ...t,
+                        isNewInferredTask: false,
+                    })),
                 };
             },
             forceRefresh
@@ -339,14 +368,11 @@ Return a JSON object with these exact keys:
 
     // Scenario 2: Backlog has 0 uncompleted tasks, but repository is connected or commits are present
     if (repoConnected || recentCommitMessages.length > 0) {
-        const commitsFingerprint = recentCommitMessages.slice(0, 5).join(";").slice(0, 30);
-        const cacheKey = `ai_suggestion_inferred_${projectName.replace(/\s+/g, "_")}_${recentCommitMessages.length}_${commitsFingerprint}`;
-
         return cacheAiResponse(
             cacheKey,
             async () => {
                 const commitText = recentCommitMessages.length > 0
-                    ? recentCommitMessages.slice(0, 20).map((c) => `- ${c}`).join("\n")
+                    ? recentCommitMessages.slice(0, 15).map((c) => `- ${c}`).join("\n")
                     : "Repository is connected, but no commit log could be retrieved.";
 
                 const prompt = `You are a Principal Software Engineer and Technical Lead.
@@ -359,29 +385,34 @@ Project Context:
 Recent Git Commits from Connected Repository:
 ${commitText}
 
-Based ONLY on the recent git commit activity, the project name, and the project description:
-1. Deduce the current state of implementation (what was recently built, configured, or committed).
-2. Formulate the single most important, logical next feature, component, or task the developer should build next to advance the project.
-3. Provide a clear title, thorough technical description, priority, and concrete execution steps.
+Based on recent commit activity, project name, and description:
+1. Deduce the current state of implementation.
+2. Formulate 3 to 5 concrete, actionable next tasks/features the developer should build next to advance the project.
+3. Order them logically (immediate next milestone first).
 
-Return a JSON object with these exact keys:
-- "suggestedTaskId": "inferred-next-task"
-- "suggestedTaskTitle": string (concise, clear task title)
-- "suggestedTaskDescription": string (detailed technical description of what needs to be implemented next)
-- "priority": "High" | "Medium" | "Low"
-- "reasoning": string (2-3 sentences explaining why this is the next logical step based on recent commits and project scope)
-- "recommendedNextSteps": string[] (array of 2 to 4 concrete action steps to implement this task)`;
+Return a JSON object with this exact structure:
+{
+  "summary": "1-2 sentence overview of recent implementation and next recommended milestone",
+  "tasks": [
+    {
+      "id": "inferred-1",
+      "title": "Actionable task title",
+      "description": "Detailed technical description of feature to build",
+      "priority": "High" | "Medium" | "Low",
+      "reasoning": "Why this task is next based on commit history"
+    }
+  ]
+}`;
 
                 const rawText = await callGeminiWithRetry(prompt);
                 const parsed = JSON.parse(cleanJsonText(rawText));
                 return {
-                    suggestedTaskId: "inferred-next-task",
-                    suggestedTaskTitle: parsed.suggestedTaskTitle || "Next Feature Implementation",
-                    suggestedTaskDescription: parsed.suggestedTaskDescription || parsed.reasoning || "",
-                    priority: parsed.priority || "High",
-                    isNewInferredTask: true,
-                    reasoning: parsed.reasoning,
-                    recommendedNextSteps: parsed.recommendedNextSteps || [],
+                    summary: parsed.summary || "Recommended next milestone tasks derived from repository commit history.",
+                    tasks: (parsed.tasks || []).map((t: AiNextTaskItem, idx: number) => ({
+                        ...t,
+                        id: t.id || `inferred-${idx + 1}`,
+                        isNewInferredTask: true,
+                    })),
                 };
             },
             forceRefresh
@@ -390,7 +421,6 @@ Return a JSON object with these exact keys:
 
     // Scenario 3: 0 tasks, no repo, but project has a description
     if (projectDescription && projectDescription.trim().length > 5) {
-        const cacheKey = `ai_suggestion_init_${projectName.replace(/\s+/g, "_")}`;
         return cacheAiResponse(
             cacheKey,
             async () => {
@@ -400,26 +430,31 @@ The project '${projectName}' has just been created with no tasks and no reposito
 Project Description:
 ${projectDescription}
 
-Based on the project name and description, define the single most essential initial architectural or foundational task to kick off this project.
+Define 3 essential foundational tasks to kick off this project.
 
-Return a JSON object with these exact keys:
-- "suggestedTaskId": "inferred-init-task"
-- "suggestedTaskTitle": string (concise task title)
-- "suggestedTaskDescription": string (technical description of this foundational task)
-- "priority": "High"
-- "reasoning": string (2-3 sentences explaining why this is the foundational first step)
-- "recommendedNextSteps": string[] (array of 2 to 4 concrete setup steps)`;
+Return a JSON object with this exact structure:
+{
+  "summary": "Foundational kickoff roadmap for ${projectName}.",
+  "tasks": [
+    {
+      "id": "inferred-init-1",
+      "title": "Task title",
+      "description": "Technical description",
+      "priority": "High" | "Medium" | "Low",
+      "reasoning": "Why this is a foundational kickoff step"
+    }
+  ]
+}`;
 
                 const rawText = await callGeminiWithRetry(prompt);
                 const parsed = JSON.parse(cleanJsonText(rawText));
                 return {
-                    suggestedTaskId: "inferred-init-task",
-                    suggestedTaskTitle: parsed.suggestedTaskTitle || "Initial Foundation Setup",
-                    suggestedTaskDescription: parsed.suggestedTaskDescription || parsed.reasoning || "",
-                    priority: parsed.priority || "High",
-                    isNewInferredTask: true,
-                    reasoning: parsed.reasoning,
-                    recommendedNextSteps: parsed.recommendedNextSteps || [],
+                    summary: parsed.summary || `Foundational kickoff tasks for ${projectName}.`,
+                    tasks: (parsed.tasks || []).map((t: AiNextTaskItem, idx: number) => ({
+                        ...t,
+                        id: t.id || `init-${idx + 1}`,
+                        isNewInferredTask: true,
+                    })),
                 };
             },
             forceRefresh
@@ -429,6 +464,46 @@ Return a JSON object with these exact keys:
     throw new Error(
         "No tasks found. Please add tasks to this project or connect a GitHub repository so AI can inspect your recent commit history and recommend what to build next."
     );
+}
+
+/**
+ * Backwards-compatible wrapper returning a single task suggestion.
+ */
+export async function suggestNextTask(
+    tasks: Task[],
+    projectName: string,
+    recentCommitMessages: string[] = [],
+    forceRefresh: boolean = false,
+    collaboratorsCount: number = 1,
+    projectDescription: string = "",
+    repoConnected: boolean = false,
+    projectId?: string
+): Promise<AiTaskSuggestion> {
+    const batch = await suggestNextTasksBatch(
+        tasks,
+        projectName,
+        recentCommitMessages,
+        forceRefresh,
+        collaboratorsCount,
+        projectDescription,
+        repoConnected,
+        projectId
+    );
+
+    const first = batch.tasks[0];
+    if (!first) {
+        throw new Error("No tasks suggested.");
+    }
+
+    return {
+        suggestedTaskId: first.id,
+        suggestedTaskTitle: first.title,
+        suggestedTaskDescription: first.description,
+        priority: first.priority,
+        isNewInferredTask: first.isNewInferredTask,
+        reasoning: first.reasoning || batch.summary,
+        recommendedNextSteps: first.recommendedNextSteps || [],
+    };
 }
 
 export async function analyzeProjectHealth(
@@ -441,7 +516,7 @@ export async function analyzeProjectHealth(
 ): Promise<AiProjectHealth> {
     const totalTasks = tasks.length;
     const completedTasks = tasks.filter((t) => t.status === "Completed").length;
-    const cacheKey = `ai_health_${project.id}_${totalTasks}_${completedTasks}_collab_${collaboratorsCount}_gh_${linkedGithubCount}`;
+    const cacheKey = `health_${project.id}`;
 
     return cacheAiResponse(
         cacheKey,
@@ -449,7 +524,7 @@ export async function analyzeProjectHealth(
             const highPriorityCount = tasks.filter((t) => t.priority === "High" && t.status !== "Completed").length;
             const inProgressCount = tasks.filter((t) => t.status === "In Progress").length;
 
-            const taskSummary = tasks.map(
+            const taskSummary = tasks.slice(0, 12).map(
                 (t) => `- [${t.status}] (${t.priority} priority) ${t.title}`
             ).join("\n") || "No tasks defined yet.";
 
@@ -466,22 +541,17 @@ Active Team Collaborators: ${collaboratorsCount} member(s)
 GitHub Repository Connected: ${repoConnected ? "Yes" : "No"}
 Linked GitHub Issues & Pull Requests: ${linkedGithubCount}
 
-Task List:
+Task Snapshot:
 ${taskSummary}
 
-Evaluate the health of this project. Consider:
-1. Team capacity & active team collaborators (${collaboratorsCount} member(s))
-2. Progress ratio vs total tasks (${completedTasks}/${totalTasks})
-3. Uncompleted high-priority task bottleneck (${highPriorityCount} pending)
-4. GitHub issues, pull requests & repository activity tracking (${linkedGithubCount} linked)
-5. Project activity balance
+Evaluate project health concisely.
 
 Return a JSON object with these exact keys:
 - "healthScore": number (integer from 0 to 100)
 - "status": "Healthy" | "Needs Attention" | "At Risk"
-- "summary": string (2-3 sentence executive summary of overall project health)
-- "keyRisks": string[] (array of 2 to 4 potential risk factors or bottlenecks)
-- "recommendations": string[] (array of 2 to 4 actionable recommendations for the engineering team)`;
+- "summary": string (2-3 sentence executive summary)
+- "keyRisks": string[] (array of 2 to 3 risks)
+- "recommendations": string[] (array of 2 to 3 actionable recommendations)`;
 
             const rawText = await callGeminiWithRetry(prompt);
             const health: AiProjectHealth = JSON.parse(cleanJsonText(rawText));
@@ -497,8 +567,7 @@ export async function generateProductivityInsights(
     githubUsername?: string | null,
     forceRefresh: boolean = false
 ): Promise<AiProductivityInsight> {
-    const completedCount = tasks.filter((t) => t.status === "Completed").length;
-    const cacheKey = `ai_productivity_${tasks.length}_${completedCount}_${projects.length}`;
+    const cacheKey = "productivity";
 
     return cacheAiResponse(
         cacheKey,
@@ -521,19 +590,19 @@ User Profile:
 - Todo Tasks: ${todoTasks.length}
 - High Priority Pending Tasks: ${highPriorityUncompleted.length}
 
-Recent Completed Task Titles:
+Recent Completed Tasks:
 ${completedTasks.slice(0, 5).map((t) => `- ${t.title}`).join("\n") || "No completed tasks yet."}
 
-Current In Progress Task Titles:
+Current In Progress Tasks:
 ${inProgressTasks.slice(0, 5).map((t) => `- ${t.title}`).join("\n") || "No in-progress tasks."}
 
-Evaluate developer productivity and workflow momentum.
+Evaluate developer productivity and workflow momentum concisely.
 
 Return a JSON object with these exact keys:
 - "velocityLevel": "Accelerating" | "Steady" | "Blocked" | "Starting Out"
-- "summary": string (2-3 sentences summarizing development velocity and work rhythm)
-- "keyAchievements": string[] (array of 2 to 3 bullet points highlighting recent wins or progress)
-- "optimizationTips": string[] (array of 2 to 3 actionable tips to improve throughput and focus)`;
+- "summary": string (2-3 sentences summarizing development velocity)
+- "keyAchievements": string[] (array of 2 to 3 bullet points)
+- "optimizationTips": string[] (array of 2 to 3 actionable tips)`;
 
             const rawText = await callGeminiWithRetry(prompt);
             const insight: AiProductivityInsight = JSON.parse(cleanJsonText(rawText));
@@ -579,4 +648,3 @@ Return a JSON object with these exact keys:
     const result: AiProjectMetadata = JSON.parse(cleanJsonText(rawText));
     return result;
 }
-
