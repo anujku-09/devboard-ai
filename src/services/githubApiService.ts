@@ -165,6 +165,7 @@ interface GithubApiIssue {
     id: number;
     number: number;
     title: string;
+    body?: string | null;
     state: IssueState;
     html_url: string;
     user: { login: string; avatar_url: string } | null;
@@ -180,6 +181,7 @@ function mapIssue(issue: GithubApiIssue): GithubIssue {
         id: issue.id,
         number: issue.number,
         title: issue.title,
+        body: issue.body ?? null,
         state: issue.state,
         authorLogin: issue.user?.login ?? "unknown",
         authorAvatarUrl: issue.user?.avatar_url ?? null,

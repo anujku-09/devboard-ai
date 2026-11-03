@@ -648,3 +648,41 @@ Return a JSON object with these exact keys:
     const result: AiProjectMetadata = JSON.parse(cleanJsonText(rawText));
     return result;
 }
+
+export interface AiTaskMetadata {
+    title: string;
+    description: string;
+    priority: "Low" | "Medium" | "High";
+    suggestedDueDateDays: number;
+}
+
+/**
+ * Automatically formulates an actionable task title, technical description,
+ * priority, and realistic due date from rough keywords or issue details.
+ */
+export async function generateTaskMetadata(
+    titleInput: string,
+    projectContext?: string
+): Promise<AiTaskMetadata> {
+    const prompt = `You are a technical engineering lead drafting an actionable task specification.
+
+Task Concept / Keywords: ${titleInput}
+Project Context: ${projectContext || "General software development project"}
+
+Generate a polished task specification for a developer workflow:
+1. "title": Crisp, actionable task title (e.g. "Implement Dark/Light Mode Theme Toggle", "Integrate Stripe Webhook Handler")
+2. "description": 2-3 sentences explaining implementation requirements, architectural notes, and test criteria.
+3. "priority": "High" | "Medium" | "Low"
+4. "suggestedDueDateDays": Recommended turnaround days (number between 3 and 10)
+
+Return a JSON object with these exact keys:
+- "title": string
+- "description": string
+- "priority": "High" | "Medium" | "Low"
+- "suggestedDueDateDays": number`;
+
+    const rawText = await callGeminiWithRetry(prompt);
+    const result: AiTaskMetadata = JSON.parse(cleanJsonText(rawText));
+    return result;
+}
+

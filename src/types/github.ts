@@ -69,6 +69,7 @@ export interface GithubIssue {
     id: number;
     number: number;
     title: string;
+    body?: string | null;
     state: IssueState;
     authorLogin: string;
     authorAvatarUrl: string | null;
