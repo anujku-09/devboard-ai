@@ -412,7 +412,7 @@ function Settings() {
                                 <Bot size={16} className="text-ember shrink-0" />
                                 <div>
                                     <p className="text-[10px] text-slate-400">AI Intelligence</p>
-                                    <p className="text-xs font-bold text-slate-900 dark:text-white">Gemini 2.5 Flash</p>
+                                    <p className="text-xs font-bold text-slate-900 dark:text-white">Gemini 1.5 Flash</p>
                                 </div>
                             </div>
 

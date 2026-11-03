@@ -9,12 +9,28 @@ export function useTaskSuggestion() {
     const [error, setError] = useState<string | null>(null);
 
     const getSuggestion = useCallback(
-        async (tasks: Task[], projectName: string, recentCommitMessages: string[] = [], forceRefresh: boolean = false) => {
+        async (
+            tasks: Task[],
+            projectName: string,
+            recentCommitMessages: string[] = [],
+            forceRefresh: boolean = false,
+            collaboratorsCount: number = 1,
+            projectDescription: string = "",
+            repoConnected: boolean = false
+        ) => {
             setLoading(true);
             setError(null);
 
             try {
-                const result = await suggestNextTask(tasks, projectName, recentCommitMessages, forceRefresh);
+                const result = await suggestNextTask(
+                    tasks,
+                    projectName,
+                    recentCommitMessages,
+                    forceRefresh,
+                    collaboratorsCount,
+                    projectDescription,
+                    repoConnected
+                );
                 setSuggestion(result);
             } catch (err) {
                 setError(err instanceof Error ? err.message : "Failed to get AI task suggestion.");

@@ -37,7 +37,7 @@ interface SidebarProps {
 function Sidebar({ isOpen, onClose }: SidebarProps) {
     const { user, logout } = useAuth();
     const { projects } = useProjects();
-    const { tasks, updateTask } = useTasks();
+    const { tasks, updateTask, createTask } = useTasks();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -366,7 +366,7 @@ function Sidebar({ isOpen, onClose }: SidebarProps) {
                             </span>
                         </div>
                         <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                            Gemini 2.5 Flash active for real-time task breakdowns & diagnostic insights.
+                            Gemini 1.5 Flash active for real-time task breakdowns & diagnostic insights.
                         </p>
                     </div>
                 </nav>
@@ -410,8 +410,21 @@ function Sidebar({ isOpen, onClose }: SidebarProps) {
                         open={suggestionModalOpen}
                         project={targetProject}
                         tasks={tasks.filter((t) => t.projectId === targetProject.id)}
+                        repoConnection={repoConnections.find((c) => c.projectId === targetProject.id) || null}
                         onClose={() => setSuggestionModalOpen(false)}
                         onTaskUpdated={updateTask}
+                        onTaskCreated={async (newTask) => {
+                            if (!user) return;
+                            await createTask({
+                                projectId: newTask.projectId,
+                                userId: newTask.userId || user.id,
+                                title: newTask.title,
+                                description: newTask.description,
+                                status: newTask.status,
+                                priority: newTask.priority,
+                                dueDate: newTask.dueDate,
+                            });
+                        }}
                     />
 
                     <ProjectBreakdownModal

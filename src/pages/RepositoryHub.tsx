@@ -119,7 +119,7 @@ function RepositoryHub() {
                             Code Intelligence
                         </p>
                         <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white mt-0.5">
-                            Gemini 2.5 Active
+                            Gemini 1.5 Active
                         </p>
                     </div>
                 </div>

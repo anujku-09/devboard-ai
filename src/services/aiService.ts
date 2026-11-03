@@ -2,13 +2,45 @@ import type { AiProductivityInsight, AiProjectHealth, AiSuggestedTask, AiTaskSug
 import type { Project } from "../types/project";
 import type { Task } from "../types/task";
 
-const PRIMARY_MODEL = "gemini-2.5-flash";
-const FALLBACK_MODEL = "gemini-1.5-flash";
+interface GeminiTarget {
+    apiVersion: "v1beta" | "v1";
+    model: string;
+}
+
+/**
+ * Resilient multi-tier fallback list of Gemini models.
+ * Google Generative Language API uses different identifiers across v1 and v1beta:
+ * - On v1beta: gemini-1.5-flash-latest, gemini-1.5-flash-002, gemini-1.5-flash-001, gemini-2.0-flash-exp, gemini-1.5-pro-latest
+ * - On v1: gemini-1.5-flash, gemini-1.5-pro
+ */
+const CANDIDATE_TARGETS: GeminiTarget[] = [
+    { apiVersion: "v1beta", model: "gemini-1.5-flash-latest" },
+    { apiVersion: "v1",     model: "gemini-1.5-flash" },
+    { apiVersion: "v1beta", model: "gemini-1.5-flash-002" },
+    { apiVersion: "v1beta", model: "gemini-1.5-flash-001" },
+    { apiVersion: "v1beta", model: "gemini-2.0-flash-exp" },
+    { apiVersion: "v1beta", model: "gemini-1.5-pro-latest" },
+    { apiVersion: "v1",     model: "gemini-1.5-pro" },
+    { apiVersion: "v1beta", model: "gemini-pro" },
+];
+
+let lastWorkingTarget: GeminiTarget | null = null;
 const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 Minutes Cache TTL
 
 interface CachedPayload<T> {
     timestamp: number;
     data: T;
+}
+
+/**
+ * Strips markdown code block wrappers (e.g. ```json ... ```) if returned by Gemini.
+ */
+function cleanJsonText(raw: string): string {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("```")) {
+        return trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    }
+    return trimmed;
 }
 
 /**
@@ -76,28 +108,34 @@ interface RequestError extends Error {
 }
 
 async function executeGeminiRequest(
-    model: string,
+    target: GeminiTarget,
     prompt: string,
     apiKey: string
 ): Promise<string> {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const endpoint = `https://generativelanguage.googleapis.com/${target.apiVersion}/models/${target.model}:generateContent?key=${apiKey}`;
+
+    const body: Record<string, unknown> = {
+        contents: [
+            {
+                parts: [{ text: prompt }],
+            },
+        ],
+        generationConfig: {
+            temperature: 0.2,
+        },
+    };
+
+    // Structured JSON response configuration supported on 1.5+ and 2.0+ models
+    if (!target.model.includes("gemini-pro")) {
+        (body.generationConfig as Record<string, unknown>).responseMimeType = "application/json";
+    }
 
     const response = await fetch(endpoint, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-            contents: [
-                {
-                    parts: [{ text: prompt }],
-                },
-            ],
-            generationConfig: {
-                responseMimeType: "application/json",
-                temperature: 0.2,
-            },
-        }),
+        body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -122,7 +160,7 @@ async function executeGeminiRequest(
 /**
  * Resilient Gemini API invocation engine.
  * Supports automatic retries with exponential backoff and transparent
- * fallback between gemini-2.5-flash and gemini-1.5-flash.
+ * fallback across supported model endpoints.
  */
 async function callGeminiWithRetry(prompt: string): Promise<string> {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -133,14 +171,33 @@ async function callGeminiWithRetry(prompt: string): Promise<string> {
         );
     }
 
-    const modelsToTry = [PRIMARY_MODEL, FALLBACK_MODEL];
+    const envModel = (import.meta.env.VITE_GEMINI_MODEL as string | undefined)?.trim();
+    const targetsToTry: GeminiTarget[] = [];
+
+    if (envModel) {
+        targetsToTry.push({ apiVersion: "v1beta", model: envModel });
+        targetsToTry.push({ apiVersion: "v1", model: envModel });
+    }
+
+    if (lastWorkingTarget) {
+        targetsToTry.push(lastWorkingTarget);
+    }
+
+    for (const candidate of CANDIDATE_TARGETS) {
+        if (!targetsToTry.some((t) => t.apiVersion === candidate.apiVersion && t.model === candidate.model)) {
+            targetsToTry.push(candidate);
+        }
+    }
+
     let lastError: RequestError | null = null;
 
-    for (const model of modelsToTry) {
-        const maxRetries = 2; // 3 attempts per model
+    for (const target of targetsToTry) {
+        const maxRetries = 2; // Up to 2 retries for temporary failures
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-                return await executeGeminiRequest(model, prompt, apiKey);
+                const response = await executeGeminiRequest(target, prompt, apiKey);
+                lastWorkingTarget = target;
+                return response;
             } catch (err: unknown) {
                 const requestError: RequestError =
                     err instanceof Error ? err : new Error(String(err));
@@ -148,15 +205,21 @@ async function callGeminiWithRetry(prompt: string): Promise<string> {
                 const status = requestError.status ?? 0;
                 const message = requestError.message;
 
-                const retryable = isRetryableError(status, message);
-                if (!retryable || attempt === maxRetries) {
-                    console.warn(`[Gemini AI] Model ${model} attempt ${attempt + 1} failed: ${message}`);
-                    break; // Move to fallback model
+                // 404 (Model not supported on this API version): skip retries and move to next model
+                if (status === 404 || message.toLowerCase().includes("not found")) {
+                    console.warn(`[Gemini AI] ${target.apiVersion}/${target.model} not available: ${message}. Moving to next candidate.`);
+                    break;
                 }
 
-                // Exponential backoff: 1s, 2s
+                const retryable = isRetryableError(status, message);
+                if (!retryable || attempt === maxRetries) {
+                    console.warn(`[Gemini AI] Target ${target.apiVersion}/${target.model} attempt ${attempt + 1} failed: ${message}`);
+                    break; // Move to next candidate model
+                }
+
+                // Exponential backoff for temporary rate spikes: 1s, 2s
                 const backoffMs = 1000 * Math.pow(2, attempt);
-                console.log(`[Gemini AI] ${message}. Retrying ${model} in ${backoffMs}ms...`);
+                console.log(`[Gemini AI] ${message}. Retrying ${target.model} in ${backoffMs}ms...`);
                 await sleep(backoffMs);
             }
         }
@@ -199,42 +262,50 @@ Return a JSON array where each object has these exact properties:
 - "priority": "Low" | "Medium" | "High"`;
 
             const rawText = await callGeminiWithRetry(prompt);
-            const tasks: AiSuggestedTask[] = JSON.parse(rawText);
+            const tasks: AiSuggestedTask[] = JSON.parse(cleanJsonText(rawText));
             return tasks;
         },
         forceRefresh
     );
 }
 
+/**
+ * Evaluates what task to execute next.
+ * Supports two key scenarios:
+ * 1. Backlog has uncompleted tasks -> prioritizes the best existing task.
+ * 2. Backlog has NO uncompleted tasks (0 tasks or all completed) AND repository is connected ->
+ *    analyzes git commit history, project name, and description to deduce what should be built next!
+ */
 export async function suggestNextTask(
     tasks: Task[],
     projectName: string,
     recentCommitMessages: string[] = [],
     forceRefresh: boolean = false,
-    collaboratorsCount: number = 1
+    collaboratorsCount: number = 1,
+    projectDescription: string = "",
+    repoConnected: boolean = false
 ): Promise<AiTaskSuggestion> {
     const uncompleted = tasks.filter((t) => t.status !== "Completed");
 
-    if (uncompleted.length === 0) {
-        throw new Error("All tasks are already completed! Add more tasks or create a new feature.");
-    }
+    // Scenario 1: Existing uncompleted tasks in project backlog
+    if (uncompleted.length > 0) {
+        const cacheKey = `ai_suggestion_${projectName.replace(/\s+/g, "_")}_${uncompleted.length}_collab_${collaboratorsCount}`;
 
-    const cacheKey = `ai_suggestion_${projectName.replace(/\s+/g, "_")}_${uncompleted.length}_collab_${collaboratorsCount}`;
+        return cacheAiResponse(
+            cacheKey,
+            async () => {
+                const taskListText = uncompleted
+                    .map((t) => `- [ID: ${t.id}] ${t.title} (Priority: ${t.priority}, Status: ${t.status}): ${t.description}`)
+                    .join("\n");
 
-    return cacheAiResponse(
-        cacheKey,
-        async () => {
-            const taskListText = uncompleted
-                .map((t) => `- [ID: ${t.id}] ${t.title} (Priority: ${t.priority}, Status: ${t.status}): ${t.description}`)
-                .join("\n");
+                const commitText = recentCommitMessages.length > 0
+                    ? recentCommitMessages.slice(0, 15).map((c) => `- ${c}`).join("\n")
+                    : "No recent commits recorded.";
 
-            const commitText = recentCommitMessages.length > 0
-                ? recentCommitMessages.map((c) => `- ${c}`).join("\n")
-                : "No recent commits recorded.";
-
-            const prompt = `You are an expert AI engineering manager evaluating team workload.
+                const prompt = `You are an expert AI engineering manager evaluating team workload.
 
 Project Name: ${projectName}
+Project Description: ${projectDescription || "No description provided."}
 Active Team Collaborators: ${collaboratorsCount} member(s)
 
 Uncompleted Tasks Available:
@@ -244,19 +315,123 @@ Recent Repository Commits & Team Activity:
 ${commitText}
 
 Analyze task priorities, logical engineering dependencies (e.g. data models and setup before algorithms), team capacity, and recent commit context.
-Select the single best task ID for the team to work on right now.
+Select the single best existing task ID for the team to work on right now.
 
 Return a JSON object with these exact keys:
 - "suggestedTaskId": string (must match one of the task IDs above)
 - "suggestedTaskTitle": string (title of the task)
+- "suggestedTaskDescription": string (description of the task)
+- "priority": "High" | "Medium" | "Low"
 - "reasoning": string (2-3 sentences explaining why this task is the priority now)
 - "recommendedNextSteps": string[] (array of 2 to 4 concrete action steps to execute this task)`;
 
-            const rawText = await callGeminiWithRetry(prompt);
-            const suggestion: AiTaskSuggestion = JSON.parse(rawText);
-            return suggestion;
-        },
-        forceRefresh
+                const rawText = await callGeminiWithRetry(prompt);
+                const parsed = JSON.parse(cleanJsonText(rawText));
+                return {
+                    suggestedTaskId: parsed.suggestedTaskId,
+                    suggestedTaskTitle: parsed.suggestedTaskTitle,
+                    suggestedTaskDescription: parsed.suggestedTaskDescription || "",
+                    priority: parsed.priority || "High",
+                    isNewInferredTask: false,
+                    reasoning: parsed.reasoning,
+                    recommendedNextSteps: parsed.recommendedNextSteps || [],
+                };
+            },
+            forceRefresh
+        );
+    }
+
+    // Scenario 2: Backlog has 0 uncompleted tasks, but repository is connected or commits are present
+    if (repoConnected || recentCommitMessages.length > 0) {
+        const commitsFingerprint = recentCommitMessages.slice(0, 5).join(";").slice(0, 30);
+        const cacheKey = `ai_suggestion_inferred_${projectName.replace(/\s+/g, "_")}_${recentCommitMessages.length}_${commitsFingerprint}`;
+
+        return cacheAiResponse(
+            cacheKey,
+            async () => {
+                const commitText = recentCommitMessages.length > 0
+                    ? recentCommitMessages.slice(0, 20).map((c) => `- ${c}`).join("\n")
+                    : "Repository is connected, but no commit log could be retrieved.";
+
+                const prompt = `You are a Principal Software Engineer and Technical Lead.
+The developer has connected their GitHub repository to the project '${projectName}', but has not manually added any pending tasks yet.
+
+Project Context:
+- Project Name: ${projectName}
+- Project Description: ${projectDescription || "No project description provided."}
+
+Recent Git Commits from Connected Repository:
+${commitText}
+
+Based ONLY on the recent git commit activity, the project name, and the project description:
+1. Deduce the current state of implementation (what was recently built, configured, or committed).
+2. Formulate the single most important, logical next feature, component, or task the developer should build next to advance the project.
+3. Provide a clear title, thorough technical description, priority, and concrete execution steps.
+
+Return a JSON object with these exact keys:
+- "suggestedTaskId": "inferred-next-task"
+- "suggestedTaskTitle": string (concise, clear task title)
+- "suggestedTaskDescription": string (detailed technical description of what needs to be implemented next)
+- "priority": "High" | "Medium" | "Low"
+- "reasoning": string (2-3 sentences explaining why this is the next logical step based on recent commits and project scope)
+- "recommendedNextSteps": string[] (array of 2 to 4 concrete action steps to implement this task)`;
+
+                const rawText = await callGeminiWithRetry(prompt);
+                const parsed = JSON.parse(cleanJsonText(rawText));
+                return {
+                    suggestedTaskId: "inferred-next-task",
+                    suggestedTaskTitle: parsed.suggestedTaskTitle || "Next Feature Implementation",
+                    suggestedTaskDescription: parsed.suggestedTaskDescription || parsed.reasoning || "",
+                    priority: parsed.priority || "High",
+                    isNewInferredTask: true,
+                    reasoning: parsed.reasoning,
+                    recommendedNextSteps: parsed.recommendedNextSteps || [],
+                };
+            },
+            forceRefresh
+        );
+    }
+
+    // Scenario 3: 0 tasks, no repo, but project has a description
+    if (projectDescription && projectDescription.trim().length > 5) {
+        const cacheKey = `ai_suggestion_init_${projectName.replace(/\s+/g, "_")}`;
+        return cacheAiResponse(
+            cacheKey,
+            async () => {
+                const prompt = `You are a Lead Software Architect.
+The project '${projectName}' has just been created with no tasks and no repository connected yet.
+
+Project Description:
+${projectDescription}
+
+Based on the project name and description, define the single most essential initial architectural or foundational task to kick off this project.
+
+Return a JSON object with these exact keys:
+- "suggestedTaskId": "inferred-init-task"
+- "suggestedTaskTitle": string (concise task title)
+- "suggestedTaskDescription": string (technical description of this foundational task)
+- "priority": "High"
+- "reasoning": string (2-3 sentences explaining why this is the foundational first step)
+- "recommendedNextSteps": string[] (array of 2 to 4 concrete setup steps)`;
+
+                const rawText = await callGeminiWithRetry(prompt);
+                const parsed = JSON.parse(cleanJsonText(rawText));
+                return {
+                    suggestedTaskId: "inferred-init-task",
+                    suggestedTaskTitle: parsed.suggestedTaskTitle || "Initial Foundation Setup",
+                    suggestedTaskDescription: parsed.suggestedTaskDescription || parsed.reasoning || "",
+                    priority: parsed.priority || "High",
+                    isNewInferredTask: true,
+                    reasoning: parsed.reasoning,
+                    recommendedNextSteps: parsed.recommendedNextSteps || [],
+                };
+            },
+            forceRefresh
+        );
+    }
+
+    throw new Error(
+        "No tasks found. Please add tasks to this project or connect a GitHub repository so AI can inspect your recent commit history and recommend what to build next."
     );
 }
 
@@ -313,7 +488,7 @@ Return a JSON object with these exact keys:
 - "recommendations": string[] (array of 2 to 4 actionable recommendations for the engineering team)`;
 
             const rawText = await callGeminiWithRetry(prompt);
-            const health: AiProjectHealth = JSON.parse(rawText);
+            const health: AiProjectHealth = JSON.parse(cleanJsonText(rawText));
             return health;
         },
         forceRefresh
@@ -365,7 +540,7 @@ Return a JSON object with these exact keys:
 - "optimizationTips": string[] (array of 2 to 3 actionable tips to improve throughput and focus)`;
 
             const rawText = await callGeminiWithRetry(prompt);
-            const insight: AiProductivityInsight = JSON.parse(rawText);
+            const insight: AiProductivityInsight = JSON.parse(cleanJsonText(rawText));
             return insight;
         },
         forceRefresh

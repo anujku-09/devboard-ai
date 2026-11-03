@@ -496,8 +496,10 @@ function ProjectDetails() {
         open={suggestionOpen}
         project={project}
         tasks={tasks}
+        repoConnection={repoConnection}
         onClose={() => setSuggestionOpen(false)}
         onTaskUpdated={(updated) => setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))}
+        onTaskCreated={(newTask) => setTasks((prev) => [newTask, ...prev])}
       />
 
       <ProjectHealthModal

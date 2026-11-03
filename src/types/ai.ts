@@ -9,6 +9,9 @@ export interface AiSuggestedTask {
 export interface AiTaskSuggestion {
     suggestedTaskId: string;
     suggestedTaskTitle: string;
+    suggestedTaskDescription?: string;
+    priority?: TaskPriority;
+    isNewInferredTask?: boolean;
     reasoning: string;
     recommendedNextSteps: string[];
 }

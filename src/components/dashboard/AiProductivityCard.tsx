@@ -82,7 +82,7 @@ function AiProductivityCard({ tasks, projects }: AiProductivityCardProps) {
                             </span>
                             <span className="text-[11px] text-slate-400 flex items-center gap-1">
                                 <Sparkles size={11} className="text-ember" />
-                                Gemini 2.5 Flash
+                                Gemini 1.5 Flash
                             </span>
                         </div>
                         <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
